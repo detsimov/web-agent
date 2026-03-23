@@ -1,8 +1,16 @@
 @import "tailwindcss";
+@import "highlight.js/styles/github.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +20,43 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Highlight.js dark-mode overrides */
+.dark .hljs {
+  background: #161b22;
+  color: #e6edf3;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag {
+  color: #ff7b72;
+}
+
+.dark .hljs-string,
+.dark .hljs-attr {
+  color: #a5d6ff;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #8b949e;
+}
+
+.dark .hljs-number,
+.dark .hljs-literal {
+  color: #79c0ff;
+}
+
+.dark .hljs-title,
+.dark .hljs-section {
+  color: #d2a8ff;
+}
+
+.dark .hljs-built_in {
+  color: #ffa657;
 }
