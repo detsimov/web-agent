@@ -8,9 +8,16 @@ import { MessageBubble } from "./MessageBubble";
 type Props = {
   messages: ChatMessage[];
   isLoading: boolean;
+  onDeleteMessage?: (messageId: number) => void;
+  showDeleteButton?: boolean;
 };
 
-export function MessageList({ messages, isLoading }: Props) {
+export function MessageList({
+  messages,
+  isLoading,
+  onDeleteMessage,
+  showDeleteButton,
+}: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new message or loading change
@@ -25,8 +32,15 @@ export function MessageList({ messages, isLoading }: Props) {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-4">
       {messages.map((msg, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: messages have no stable ID
-        <MessageBubble key={i} message={msg} />
+        <MessageBubble
+          key={msg.id ?? i}
+          message={msg}
+          onDelete={
+            showDeleteButton && msg.id && onDeleteMessage
+              ? () => onDeleteMessage(msg.id!)
+              : undefined
+          }
+        />
       ))}
       {isLoading && (
         <div className="flex items-start">

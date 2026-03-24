@@ -7,6 +7,7 @@ type UseChatOptions = {
   model?: string;
   maxTokens?: number;
   instructions?: string;
+  chatId?: number | null;
 };
 
 export function useChat(options: UseChatOptions = {}) {
@@ -26,15 +27,22 @@ export function useChat(options: UseChatOptions = {}) {
           ({ role, content }) => ({ role, content }),
         );
 
+        const payload: Record<string, unknown> = {
+          messages: options.chatId ? [{ role: "user", content }] : allMessages,
+        };
+
+        if (options.chatId) {
+          payload.chatId = options.chatId;
+        } else {
+          payload.model = options.model;
+          payload.maxTokens = options.maxTokens;
+          payload.instructions = options.instructions;
+        }
+
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: allMessages,
-            model: options.model,
-            maxTokens: options.maxTokens,
-            instructions: options.instructions,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!res.ok) {
@@ -57,7 +65,13 @@ export function useChat(options: UseChatOptions = {}) {
         setIsLoading(false);
       }
     },
-    [messages, options.model, options.maxTokens, options.instructions],
+    [
+      messages,
+      options.chatId,
+      options.model,
+      options.maxTokens,
+      options.instructions,
+    ],
   );
 
   const reset = useCallback(() => {
@@ -65,5 +79,22 @@ export function useChat(options: UseChatOptions = {}) {
     setError(null);
   }, []);
 
-  return { messages, isLoading, error, sendMessage, reset };
+  const loadMessages = useCallback((msgs: ChatMessage[]) => {
+    setMessages(msgs);
+    setError(null);
+  }, []);
+
+  const removeMessage = useCallback((messageId: number) => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+  }, []);
+
+  return {
+    messages,
+    isLoading,
+    error,
+    sendMessage,
+    reset,
+    loadMessages,
+    removeMessage,
+  };
 }

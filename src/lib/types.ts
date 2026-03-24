@@ -14,9 +14,23 @@ export type Model = {
 };
 
 export type ChatMessage = Message & {
+  id?: number;
   usage?: {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
   } | null;
+};
+
+export type PersistedMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: Date;
+};
+
+export type Chat = {
+  id: number;
+  name: string;
+  createdAt: string;
 };

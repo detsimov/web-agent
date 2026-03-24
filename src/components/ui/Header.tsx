@@ -13,7 +13,6 @@ type Props = {
   maxTokens: number;
   onMaxTokensChange: (value: number) => void;
   maxTokensLimit: number;
-  onNewChat: () => void;
   onOpenInstructions: () => void;
 };
 
@@ -25,7 +24,6 @@ export function Header({
   maxTokens,
   onMaxTokensChange,
   maxTokensLimit,
-  onNewChat,
   onOpenInstructions,
 }: Props) {
   return (
@@ -47,13 +45,6 @@ export function Header({
         className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
       >
         System
-      </button>
-      <button
-        type="button"
-        onClick={onNewChat}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
-      >
-        New Chat
       </button>
       <div className="ml-auto">
         <ThemeToggle />
