@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { chatTable, messageTable } from "@/db/schema";
+import { chatTable, messageTable, messageUsageTable } from "@/db/schema";
 import { Agent } from "@/lib/agent/Agent";
 import type { AgentResponse } from "@/lib/agent/types";
 import { AppError } from "@/lib/error/AppError";
@@ -42,6 +42,9 @@ export class ChatService {
       with: {
         messages: {
           orderBy: (msgs, { asc }) => [asc(msgs.createdAt)],
+          with: {
+            usage: true,
+          },
         },
       },
     });
@@ -91,7 +94,11 @@ export class ChatService {
     }
   }
 
-  async sendMessage(chatId: number, content: string): Promise<AgentResponse> {
+  async sendMessage(
+    chatId: number,
+    content: string,
+    overrides?: { model?: string; maxTokens?: number },
+  ): Promise<AgentResponse> {
     const chat = await this.getWithMessages(chatId);
 
     const history: PersistedMessage[] = chat.messages.map((m) => ({
@@ -102,16 +109,29 @@ export class ChatService {
     }));
 
     const agent = new Agent({
-      maxTokens: chat.maxTokens,
+      model: overrides?.model,
+      maxTokens: overrides?.maxTokens ?? chat.maxTokens,
       instructions: chat.systemMessage,
     });
 
     const result = await agent.run(history, content);
 
-    await db.insert(messageTable).values([
-      { chatId, role: "user", content },
-      { chatId, role: "assistant", content: result.content },
-    ]);
+    await db.insert(messageTable).values({ chatId, role: "user", content });
+
+    const [assistantMsg] = await db
+      .insert(messageTable)
+      .values({ chatId, role: "assistant", content: result.content })
+      .returning({ id: messageTable.id });
+
+    if (result.usage) {
+      await db.insert(messageUsageTable).values({
+        messageId: assistantMsg.id,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        totalTokens: result.usage.totalTokens,
+        cost: result.usage.cost,
+      });
+    }
 
     return result;
   }

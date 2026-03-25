@@ -24,7 +24,10 @@ export async function POST(request: Request) {
 
     if (chatId) {
       const lastMessage = messages[messages.length - 1];
-      const result = await chatService.sendMessage(chatId, lastMessage.content);
+      const result = await chatService.sendMessage(chatId, lastMessage.content, {
+        model,
+        maxTokens,
+      });
 
       return Response.json({
         content: result.content,

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import type { Chat } from "@/lib/types";
+import type { Chat, ChatMessage } from "@/lib/types";
 import { ChatItem } from "./ChatItem";
+import { SessionStats } from "./SessionStats";
 
 type Props = {
   activeChatId: number | null;
@@ -11,6 +12,9 @@ type Props = {
   onNewChat: () => void;
   onDeleteChat: (chatId: number) => void;
   refreshKey: number;
+  messages: ChatMessage[];
+  contextLength: number;
+  pricing?: { prompt: string; completion: string } | null;
 };
 
 export function ChatSidebar({
@@ -19,6 +23,9 @@ export function ChatSidebar({
   onNewChat,
   onDeleteChat,
   refreshKey,
+  messages,
+  contextLength,
+  pricing,
 }: Props) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [isOpen, setIsOpen] = useState(true);
@@ -133,6 +140,8 @@ export function ChatSidebar({
             </div>
           )}
         </div>
+
+        <SessionStats messages={messages} contextLength={contextLength} pricing={pricing} />
       </aside>
 
       <ConfirmDialog

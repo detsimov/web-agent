@@ -7,8 +7,9 @@ export type AgentConfig = {
 export type AgentResponse = {
   content: string;
   usage: {
-    promptTokens: number;
-    completionTokens: number;
+    inputTokens: number;
+    outputTokens: number;
     totalTokens: number;
+    cost: number | null;
   } | null;
 };

@@ -29,13 +29,13 @@ export function useChat(options: UseChatOptions = {}) {
 
         const payload: Record<string, unknown> = {
           messages: options.chatId ? [{ role: "user", content }] : allMessages,
+          model: options.model,
+          maxTokens: options.maxTokens,
         };
 
         if (options.chatId) {
           payload.chatId = options.chatId;
         } else {
-          payload.model = options.model;
-          payload.maxTokens = options.maxTokens;
           payload.instructions = options.instructions;
         }
 

@@ -12,7 +12,7 @@ import { ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
 
 const DEFAULT_MODEL = "openrouter/auto";
-const DEFAULT_MAX_TOKENS = 1024;
+const DEFAULT_MAX_TOKENS = 8192;
 
 export function ChatContainer() {
   const { models, isLoading: modelsLoading } = useModels();
@@ -52,10 +52,21 @@ export function ChatContainer() {
       if (res.ok) {
         const data = await res.json();
         const msgs: ChatMessage[] = data.chat.messages.map(
-          (m: { id: number; role: string; content: string }) => ({
+          (m: {
+            id: number;
+            role: string;
+            content: string;
+            usage?: {
+              inputTokens: number;
+              outputTokens: number;
+              totalTokens: number;
+              cost: number | null;
+            } | null;
+          }) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
+            usage: m.usage ?? undefined,
           }),
         );
         loadMessages(msgs);
@@ -68,7 +79,7 @@ export function ChatContainer() {
     const res = await fetch("/api/chats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "New Chat" }),
+      body: JSON.stringify({ name: "New Chat", maxTokens, systemMessage: instructions }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -76,7 +87,7 @@ export function ChatContainer() {
       reset();
       setSidebarRefresh((n) => n + 1);
     }
-  }, [reset]);
+  }, [reset, maxTokens, instructions]);
 
   const handleDeleteChat = useCallback(
     (chatId: number) => {
@@ -119,6 +130,9 @@ export function ChatContainer() {
         onNewChat={handleNewChat}
         onDeleteChat={handleDeleteChat}
         refreshKey={sidebarRefresh}
+        messages={messages}
+        contextLength={selectedModelData?.context_length ?? 200_000}
+        pricing={selectedModelData?.pricing}
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <Header

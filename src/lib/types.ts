@@ -16,9 +16,10 @@ export type Model = {
 export type ChatMessage = Message & {
   id?: number;
   usage?: {
-    promptTokens: number;
-    completionTokens: number;
+    inputTokens: number;
+    outputTokens: number;
     totalTokens: number;
+    cost: number | null;
   } | null;
 };
 

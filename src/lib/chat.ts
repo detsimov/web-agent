@@ -9,24 +9,31 @@ export type ChatOptions = {
 
 export type ChatCompletion = {
   data: string;
-  usage: ChatGenerationTokenUsage | null;
+  usage: ChatUsage | null;
 };
 
-export type ChatGenerationTokenUsage = {
-  completionTokens: number;
-  promptTokens: number;
+export type ChatUsage = {
+  inputTokens: number;
+  outputTokens: number;
   totalTokens: number;
+  cost: number | null;
 };
 
 export async function chat(
   messages: Message[],
   options: ChatOptions,
 ): Promise<ChatCompletion> {
-  const response = await openRouter.chat.send({
-    chatGenerationParams: {
-      messages,
+  const systemMessage = messages.find((m) => m.role === "system");
+  const input = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  const response = await openRouter.beta.responses.send({
+    openResponsesRequest: {
+      input,
+      instructions: systemMessage?.content,
       model: options.model,
-      maxTokens: options.maxTokens,
+      maxOutputTokens: options.maxTokens,
       provider: {
         sort: "price",
       },
@@ -34,20 +41,29 @@ export async function chat(
     },
   });
 
-  const usage = response.usage;
-  const reply = response.choices[0].message.content;
+  const message = response.output.find((item) => item.type === "message");
+  const reply =
+    message && "content" in message
+      ? message.content
+          .filter((c) => c.type === "output_text")
+          .map((c) => ("text" in c ? c.text : ""))
+          .join("")
+      : undefined;
 
   if (!reply) {
     throw new AppError("Пустой ответ от модели", 502, "EMPTY_RESPONSE");
   }
 
+  const usage = response.usage;
+
   return {
     data: reply,
     usage: usage
       ? {
-          completionTokens: usage.completionTokens,
-          promptTokens: usage.promptTokens,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
           totalTokens: usage.totalTokens,
+          cost: usage.cost ?? null,
         }
       : null,
   };
