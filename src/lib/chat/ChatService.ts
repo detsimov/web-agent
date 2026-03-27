@@ -1,8 +1,16 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { chatTable, messageTable, messageUsageTable } from "@/db/schema";
+import {
+  chatTable,
+  messageTable,
+  messageUsageTable,
+  summarizationStateTable,
+} from "@/db/schema";
 import { Agent } from "@/lib/agent/Agent";
 import type { AgentResponse } from "@/lib/agent/types";
+import { ContextManager } from "@/lib/context/ContextManager";
+import { SUMMARY_SYSTEM_PROMPT } from "@/lib/context/constants";
+import type { ContextSummarizationOptions } from "@/lib/context/types";
 import { AppError } from "@/lib/error/AppError";
 import type { PersistedMessage } from "@/lib/types";
 
@@ -70,6 +78,47 @@ export class ChatService {
     return updated;
   }
 
+  async updateChat(
+    chatId: number,
+    data: {
+      name?: string;
+      summarizationStrategy?: string | null;
+      summarizationModel?: string | null;
+      summarizationEvery?: number | null;
+      summarizationRatio?: number | null;
+      summarizationKeep?: number | null;
+    },
+  ) {
+    const set: Record<string, unknown> = {};
+    if (data.name !== undefined) set.name = data.name;
+    if (data.summarizationStrategy !== undefined)
+      set.summarizationStrategy = data.summarizationStrategy;
+    if (data.summarizationModel !== undefined)
+      set.summarizationModel = data.summarizationModel;
+    if (data.summarizationEvery !== undefined)
+      set.summarizationEvery = data.summarizationEvery;
+    if (data.summarizationRatio !== undefined)
+      set.summarizationRatio = data.summarizationRatio;
+    if (data.summarizationKeep !== undefined)
+      set.summarizationKeep = data.summarizationKeep;
+
+    if (Object.keys(set).length === 0) {
+      throw new AppError("No fields to update", 400, "EMPTY_UPDATE");
+    }
+
+    const [updated] = await db
+      .update(chatTable)
+      .set(set)
+      .where(eq(chatTable.id, chatId))
+      .returning();
+
+    if (!updated) {
+      throw new AppError("Chat not found", 404, "CHAT_NOT_FOUND");
+    }
+
+    return updated;
+  }
+
   async deleteChat(chatId: number) {
     const [deleted] = await db
       .delete(chatTable)
@@ -94,6 +143,58 @@ export class ChatService {
     }
   }
 
+  async loadSummaryState(chatId: number) {
+    const row = await db.query.summarizationStateTable.findFirst({
+      where: eq(summarizationStateTable.chatId, chatId),
+    });
+    if (!row) {
+      return { core: [] as string[], context: "", summarizedUpTo: 0 };
+    }
+    return {
+      core: JSON.parse(row.core) as string[],
+      context: row.context,
+      summarizedUpTo: row.summarizedUpTo,
+    };
+  }
+
+  async saveSummaryState(
+    chatId: number,
+    core: string[],
+    context: string,
+    summarizedUpTo: number,
+  ) {
+    await db
+      .insert(summarizationStateTable)
+      .values({
+        chatId,
+        core: JSON.stringify(core),
+        context,
+        summarizedUpTo,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: summarizationStateTable.chatId,
+        set: {
+          core: JSON.stringify(core),
+          context,
+          summarizedUpTo,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  async getLastUsage(chatId: number) {
+    const row = await db
+      .select({ totalTokens: messageUsageTable.totalTokens })
+      .from(messageUsageTable)
+      .innerJoin(messageTable, eq(messageUsageTable.messageId, messageTable.id))
+      .where(eq(messageTable.chatId, chatId))
+      .orderBy(desc(messageUsageTable.createdAt))
+      .limit(1);
+
+    return row[0] ?? { totalTokens: 0 };
+  }
+
   async sendMessage(
     chatId: number,
     content: string,
@@ -108,13 +209,61 @@ export class ChatService {
       createdAt: m.createdAt,
     }));
 
+    let messagesToSend = history;
+    let core: string[] | undefined;
+    let context: string | undefined;
+    let summaryDirty = false;
+    let newSummarizedUpTo = 0;
+
+    if (chat.summarizationStrategy) {
+      const summaryState = await this.loadSummaryState(chatId);
+      const lastUsage = await this.getLastUsage(chatId);
+
+      const options: ContextSummarizationOptions =
+        chat.summarizationStrategy === "percentage"
+          ? {
+              strategy: "percentage",
+              ratio: chat.summarizationRatio ?? 0.75,
+              keep: chat.summarizationKeep ?? 4,
+            }
+          : {
+              strategy: "window",
+              every: chat.summarizationEvery ?? 10,
+              keep: chat.summarizationKeep ?? 4,
+            };
+
+      const summarizationAgent = new Agent({
+        model: chat.summarizationModel ?? undefined,
+        instructions: SUMMARY_SYSTEM_PROMPT,
+      });
+
+      const contextManager = new ContextManager(options, summarizationAgent);
+
+      const prepareResult = await contextManager.prepare({
+        messages: history,
+        core: summaryState.core,
+        context: summaryState.context,
+        summarizedUpTo: summaryState.summarizedUpTo,
+        lastUsage: {
+          totalTokens: lastUsage.totalTokens,
+          maxTokens: overrides?.maxTokens ?? chat.maxTokens,
+        },
+      });
+
+      messagesToSend = prepareResult.messages;
+      core = prepareResult.core;
+      context = prepareResult.context;
+      summaryDirty = prepareResult.dirty;
+      newSummarizedUpTo = prepareResult.summarizedUpTo;
+    }
+
     const agent = new Agent({
       model: overrides?.model,
       maxTokens: overrides?.maxTokens ?? chat.maxTokens,
       instructions: chat.systemMessage,
     });
 
-    const result = await agent.run(history, content);
+    const result = await agent.run(messagesToSend, content, core, context);
 
     await db.insert(messageTable).values({ chatId, role: "user", content });
 
@@ -131,6 +280,10 @@ export class ChatService {
         totalTokens: result.usage.totalTokens,
         cost: result.usage.cost,
       });
+    }
+
+    if (summaryDirty && core && context) {
+      await this.saveSummaryState(chatId, core, context, newSummarizedUpTo);
     }
 
     return result;

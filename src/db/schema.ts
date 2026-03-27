@@ -6,6 +6,11 @@ export const chatTable = sqliteTable("chat_table", {
   name: text().notNull(),
   maxTokens: int("max_tokens").notNull(),
   systemMessage: text("system_message").notNull(),
+  summarizationStrategy: text("summarization_strategy"),
+  summarizationModel: text("summarization_model"),
+  summarizationEvery: int("summarization_every"),
+  summarizationRatio: real("summarization_ratio"),
+  summarizationKeep: int("summarization_keep"),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -38,9 +43,37 @@ export const messageUsageTable = sqliteTable("message_usage", {
     .$defaultFn(() => new Date()),
 });
 
-export const chatRelations = relations(chatTable, ({ many }) => ({
+export const summarizationStateTable = sqliteTable("summarization_state", {
+  id: int().primaryKey({ autoIncrement: true }),
+  chatId: int("chat_id")
+    .notNull()
+    .unique()
+    .references(() => chatTable.id, { onDelete: "cascade" }),
+  core: text().notNull(),
+  context: text().notNull(),
+  summarizedUpTo: int("summarized_up_to").notNull(),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const chatRelations = relations(chatTable, ({ many, one }) => ({
   messages: many(messageTable),
+  summarizationState: one(summarizationStateTable, {
+    fields: [chatTable.id],
+    references: [summarizationStateTable.chatId],
+  }),
 }));
+
+export const summarizationStateRelations = relations(
+  summarizationStateTable,
+  ({ one }) => ({
+    chat: one(chatTable, {
+      fields: [summarizationStateTable.chatId],
+      references: [chatTable.id],
+    }),
+  }),
+);
 
 export const messageRelations = relations(messageTable, ({ one }) => ({
   chat: one(chatTable, {

@@ -43,11 +43,18 @@ export async function GET(
       };
     });
 
+    const summaryState = await chatService.loadSummaryState(Number(chatId));
+
     return Response.json({
       chat: {
         id: chat.id,
         name: chat.name,
         createdAt: chat.createdAt,
+        summarizationStrategy: chat.summarizationStrategy ?? null,
+        summarizationModel: chat.summarizationModel ?? null,
+        summarizationEvery: chat.summarizationEvery ?? null,
+        summarizationRatio: chat.summarizationRatio ?? null,
+        summarizationKeep: chat.summarizationKeep ?? null,
         messages,
       },
       usage: {
@@ -56,6 +63,11 @@ export async function GET(
         totalTokens,
         totalCost,
         turnCount,
+      },
+      summary: {
+        core: summaryState.core,
+        context: summaryState.context,
+        summarizedUpTo: summaryState.summarizedUpTo,
       },
     });
   } catch (error) {
@@ -69,8 +81,13 @@ export async function GET(
   }
 }
 
-const RenameSchema = z.object({
-  name: z.string().nonempty(),
+const PatchSchema = z.object({
+  name: z.string().nonempty().optional(),
+  summarizationStrategy: z.enum(["window", "percentage"]).nullable().optional(),
+  summarizationModel: z.string().nullable().optional(),
+  summarizationEvery: z.number().int().positive().nullable().optional(),
+  summarizationRatio: z.number().min(0).max(1).nullable().optional(),
+  summarizationKeep: z.number().int().nonnegative().nullable().optional(),
 });
 
 export async function PATCH(
@@ -80,8 +97,8 @@ export async function PATCH(
   try {
     const { chatId } = await params;
     const body = await request.json();
-    const { name } = RenameSchema.parse(body);
-    const chat = await chatService.rename(Number(chatId), name);
+    const data = PatchSchema.parse(body);
+    const chat = await chatService.updateChat(Number(chatId), data);
 
     return Response.json({ chat });
   } catch (error) {

@@ -2,6 +2,10 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { InstructionsDialog } from "@/components/settings/InstructionsDialog";
+import type {
+  SummarizationConfig,
+  SummaryState,
+} from "@/components/settings/SummarizationSettings";
 import { ChatSidebar } from "@/components/sidebar/ChatSidebar";
 import { Header } from "@/components/ui/Header";
 import { useChat } from "@/hooks/useChat";
@@ -14,6 +18,14 @@ import { MessageList } from "./MessageList";
 const DEFAULT_MODEL = "openrouter/auto";
 const DEFAULT_MAX_TOKENS = 8192;
 
+const DEFAULT_SUMMARIZATION_CONFIG: SummarizationConfig = {
+  summarizationStrategy: null,
+  summarizationModel: null,
+  summarizationEvery: null,
+  summarizationRatio: null,
+  summarizationKeep: null,
+};
+
 export function ChatContainer() {
   const { models, isLoading: modelsLoading } = useModels();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
@@ -22,6 +34,9 @@ export function ChatContainer() {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
+  const [summarizationConfig, setSummarizationConfig] =
+    useState<SummarizationConfig>(DEFAULT_SUMMARIZATION_CONFIG);
+  const [summaryState, setSummaryState] = useState<SummaryState | null>(null);
 
   const selectedModelData = useMemo(
     () => models.find((m) => m.id === selectedModel),
@@ -70,6 +85,14 @@ export function ChatContainer() {
           }),
         );
         loadMessages(msgs);
+        setSummarizationConfig({
+          summarizationStrategy: data.chat.summarizationStrategy ?? null,
+          summarizationModel: data.chat.summarizationModel ?? null,
+          summarizationEvery: data.chat.summarizationEvery ?? null,
+          summarizationRatio: data.chat.summarizationRatio ?? null,
+          summarizationKeep: data.chat.summarizationKeep ?? null,
+        });
+        setSummaryState(data.summary ?? null);
       }
     },
     [loadMessages],
@@ -79,12 +102,18 @@ export function ChatContainer() {
     const res = await fetch("/api/chats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "New Chat", maxTokens, systemMessage: instructions }),
+      body: JSON.stringify({
+        name: "New Chat",
+        maxTokens,
+        systemMessage: instructions,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
       setActiveChatId(data.chat.id);
       reset();
+      setSummarizationConfig(DEFAULT_SUMMARIZATION_CONFIG);
+      setSummaryState(null);
       setSidebarRefresh((n) => n + 1);
     }
   }, [reset, maxTokens, instructions]);
@@ -94,6 +123,8 @@ export function ChatContainer() {
       if (chatId === activeChatId) {
         setActiveChatId(null);
         reset();
+        setSummarizationConfig(DEFAULT_SUMMARIZATION_CONFIG);
+        setSummaryState(null);
       }
     },
     [activeChatId, reset],
@@ -116,10 +147,24 @@ export function ChatContainer() {
   const handleSend = useCallback(
     async (content: string) => {
       await sendMessage(content);
-      // Refresh sidebar to update list order
       setSidebarRefresh((n) => n + 1);
     },
     [sendMessage],
+  );
+
+  const handleSummarizationUpdate = useCallback(
+    async (patch: Partial<SummarizationConfig>) => {
+      if (!activeChatId) return;
+      const updated = { ...summarizationConfig, ...patch };
+      setSummarizationConfig(updated);
+
+      await fetch(`/api/chats/${activeChatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    },
+    [activeChatId, summarizationConfig],
   );
 
   return (
@@ -133,6 +178,11 @@ export function ChatContainer() {
         messages={messages}
         contextLength={selectedModelData?.context_length ?? 200_000}
         pricing={selectedModelData?.pricing}
+        summarizationConfig={activeChatId ? summarizationConfig : null}
+        onSummarizationUpdate={handleSummarizationUpdate}
+        summaryState={activeChatId ? summaryState : null}
+        models={models}
+        modelsLoading={modelsLoading}
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <Header

@@ -56,8 +56,7 @@ export function SessionStats({ messages, contextLength, pricing }: Props) {
         totalInput += msg.usage.inputTokens;
         totalOutput += msg.usage.outputTokens;
         totalCost += msg.usage.cost ?? 0;
-        lastContextUsed =
-          msg.usage.inputTokens + msg.usage.outputTokens;
+        lastContextUsed = msg.usage.inputTokens + msg.usage.outputTokens;
         sparkline.push({
           turn: turnCount,
           cost: msg.usage.cost ?? 0,
@@ -108,37 +107,40 @@ export function SessionStats({ messages, contextLength, pricing }: Props) {
       </div>
 
       {/* Cumulative totals */}
-      {hasData && (() => {
-        const promptRate = Number.parseFloat(pricing?.prompt ?? "0");
-        const completionRate = Number.parseFloat(pricing?.completion ?? "0");
-        const inputCost = promptRate ? totalInput * promptRate : null;
-        const outputCost = completionRate ? totalOutput * completionRate : null;
+      {hasData &&
+        (() => {
+          const promptRate = Number.parseFloat(pricing?.prompt ?? "0");
+          const completionRate = Number.parseFloat(pricing?.completion ?? "0");
+          const inputCost = promptRate ? totalInput * promptRate : null;
+          const outputCost = completionRate
+            ? totalOutput * completionRate
+            : null;
 
-        return (
-          <div className="mb-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
-            <div className="text-zinc-500 dark:text-zinc-400">
-              <span className="text-zinc-400 dark:text-zinc-500">&darr;</span>{" "}
-              {formatTokens(totalInput)} in
+          return (
+            <div className="mb-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+              <div className="text-zinc-500 dark:text-zinc-400">
+                <span className="text-zinc-400 dark:text-zinc-500">&darr;</span>{" "}
+                {formatTokens(totalInput)} in
+              </div>
+              <div className="text-right text-zinc-500 dark:text-zinc-400">
+                {inputCost != null ? `$${inputCost.toFixed(4)}` : ""}
+              </div>
+              <div className="text-zinc-500 dark:text-zinc-400">
+                <span className="text-zinc-400 dark:text-zinc-500">&uarr;</span>{" "}
+                {formatTokens(totalOutput)} out
+              </div>
+              <div className="text-right text-zinc-500 dark:text-zinc-400">
+                {outputCost != null ? `$${outputCost.toFixed(4)}` : ""}
+              </div>
+              <div className="text-zinc-500 dark:text-zinc-400">
+                {turnCount} {turnCount === 1 ? "turn" : "turns"}
+              </div>
+              <div className="text-right font-medium text-zinc-600 dark:text-zinc-300">
+                ${totalCost.toFixed(4)}
+              </div>
             </div>
-            <div className="text-right text-zinc-500 dark:text-zinc-400">
-              {inputCost != null ? `$${inputCost.toFixed(4)}` : ""}
-            </div>
-            <div className="text-zinc-500 dark:text-zinc-400">
-              <span className="text-zinc-400 dark:text-zinc-500">&uarr;</span>{" "}
-              {formatTokens(totalOutput)} out
-            </div>
-            <div className="text-right text-zinc-500 dark:text-zinc-400">
-              {outputCost != null ? `$${outputCost.toFixed(4)}` : ""}
-            </div>
-            <div className="text-zinc-500 dark:text-zinc-400">
-              {turnCount} {turnCount === 1 ? "turn" : "turns"}
-            </div>
-            <div className="text-right font-medium text-zinc-600 dark:text-zinc-300">
-              ${totalCost.toFixed(4)}
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* Cost-per-turn sparkline */}
       {sparkline.length >= 2 && (

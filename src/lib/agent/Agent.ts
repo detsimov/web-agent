@@ -21,9 +21,12 @@ export class Agent {
   async run(
     history: PersistedMessage[],
     newMessage: string,
+    core?: string[],
+    context?: string,
   ): Promise<AgentResponse> {
+    const systemContent = this.buildSystemMessage(core, context);
     const messages: Message[] = [
-      { role: "system", content: this.config.instructions },
+      { role: "system", content: systemContent },
       ...history.map((m) => ({
         role: m.role as Message["role"],
         content: m.content,
@@ -32,6 +35,21 @@ export class Agent {
     ];
 
     return this.call(messages);
+  }
+
+  private buildSystemMessage(core?: string[], context?: string): string {
+    const base = this.config.instructions;
+    if (!core?.length && !context) return base;
+
+    let summary = "\n\n[CONVERSATION SUMMARY]\n[CORE]";
+    if (core?.length) {
+      summary += `\n${core.join("\n")}`;
+    }
+    if (context) {
+      summary += `\n\n[CONTEXT]\n${context}`;
+    }
+
+    return base + summary;
   }
 
   async runStateless(messages: Message[]): Promise<AgentResponse> {
