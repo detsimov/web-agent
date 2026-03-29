@@ -1,54 +1,55 @@
 "use client";
 
-import { MaxTokensInput } from "@/components/settings/MaxTokensInput";
-import { ModelSelector } from "@/components/settings/ModelSelector";
-import type { Model } from "@/lib/types";
-import { ThemeToggle } from "./ThemeToggle";
-
 type Props = {
-  models: Model[];
-  modelsLoading: boolean;
-  selectedModel: string;
-  onModelChange: (modelId: string) => void;
+  modelName: string;
   maxTokens: number;
-  onMaxTokensChange: (value: number) => void;
-  maxTokensLimit: number;
-  onOpenInstructions: () => void;
+  modelsLoading: boolean;
+  onOpenSettings: () => void;
 };
 
 export function Header({
-  models,
-  modelsLoading,
-  selectedModel,
-  onModelChange,
+  modelName,
   maxTokens,
-  onMaxTokensChange,
-  maxTokensLimit,
-  onOpenInstructions,
+  modelsLoading,
+  onOpenSettings,
 }: Props) {
   return (
-    <header className="flex flex-wrap items-end gap-3 border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
-      <ModelSelector
-        models={models}
-        value={selectedModel}
-        onChange={onModelChange}
-        isLoading={modelsLoading}
-      />
-      <MaxTokensInput
-        value={maxTokens}
-        onChange={onMaxTokensChange}
-        max={maxTokensLimit}
-      />
+    <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+      <span className="text-sm text-zinc-600 dark:text-zinc-400">
+        {modelsLoading ? (
+          "Loading..."
+        ) : (
+          <>
+            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              {modelName}
+            </span>
+            {" \u00B7 "}
+            {maxTokens.toLocaleString()} tokens
+          </>
+        )}
+      </span>
       <button
         type="button"
-        onClick={onOpenInstructions}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-700"
+        onClick={onOpenSettings}
+        className="rounded-md border border-zinc-300 p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+        aria-label="Settings"
       >
-        System
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
       </button>
-      <div className="ml-auto">
-        <ThemeToggle />
-      </div>
     </header>
   );
 }

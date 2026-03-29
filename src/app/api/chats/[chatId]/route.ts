@@ -1,6 +1,6 @@
 import * as z from "zod";
-import { chatService } from "@/lib/chat/ChatService";
 import { AppError } from "@/lib/error/AppError";
+import { repo } from "@/lib/repository/DrizzleChatRepository";
 
 type Params = { chatId: string };
 
@@ -10,7 +10,7 @@ export async function GET(
 ) {
   try {
     const { chatId } = await params;
-    const chat = await chatService.getWithMessages(Number(chatId));
+    const chat = await repo.getChatWithMessages(Number(chatId));
 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
@@ -18,44 +18,73 @@ export async function GET(
     let totalCost = 0;
     let turnCount = 0;
 
-    const messages = chat.messages.map((m) => {
-      const usage = m.usage;
-      if (usage) {
-        totalInputTokens += usage.inputTokens;
-        totalOutputTokens += usage.outputTokens;
-        totalTokens += usage.totalTokens;
-        totalCost += usage.cost ?? 0;
-        turnCount++;
-      }
+    const branches = chat.branches.map((branch) => {
+      const messages = branch.messages.map((m) => {
+        const usage = m.usage;
+        if (usage) {
+          totalInputTokens += usage.inputTokens;
+          totalOutputTokens += usage.outputTokens;
+          totalTokens += usage.totalTokens;
+          totalCost += usage.cost ?? 0;
+          turnCount++;
+        }
+        return {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+          usage: usage
+            ? {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                totalTokens: usage.totalTokens,
+                cost: usage.cost,
+              }
+            : null,
+        };
+      });
+
+      const contextState = branch.contextState;
+
       return {
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        createdAt: m.createdAt,
-        usage: usage
+        id: branch.id,
+        name: branch.name,
+        parentBranchId: branch.parentBranchId,
+        forkedAtMsgId: branch.forkedAtMsgId,
+        contextMode: branch.contextMode,
+        model: branch.model,
+        slidingWindowSize: branch.slidingWindowSize,
+        stickyFactsEnabled: branch.stickyFactsEnabled,
+        stickyFactsEvery: branch.stickyFactsEvery,
+        stickyFactsModel: branch.stickyFactsModel,
+        summarizationTrigger: branch.summarizationTrigger,
+        summarizationModel: branch.summarizationModel,
+        summarizationEvery: branch.summarizationEvery,
+        summarizationRatio: branch.summarizationRatio,
+        summarizationKeep: branch.summarizationKeep,
+        createdAt: branch.createdAt,
+        messages,
+        contextState: contextState
           ? {
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-              totalTokens: usage.totalTokens,
-              cost: usage.cost,
+              facts: JSON.parse(contextState.facts) as Record<string, string>,
+              context: contextState.context,
+              summarizedUpTo: contextState.summarizedUpTo,
+              factsExtractedUpTo: contextState.factsExtractedUpTo,
             }
           : null,
       };
     });
-
-    const summaryState = await chatService.loadSummaryState(Number(chatId));
 
     return Response.json({
       chat: {
         id: chat.id,
         name: chat.name,
         createdAt: chat.createdAt,
-        summarizationStrategy: chat.summarizationStrategy ?? null,
-        summarizationModel: chat.summarizationModel ?? null,
-        summarizationEvery: chat.summarizationEvery ?? null,
-        summarizationRatio: chat.summarizationRatio ?? null,
-        summarizationKeep: chat.summarizationKeep ?? null,
-        messages,
+        stickyFactsBaseKeys: chat.stickyFactsBaseKeys
+          ? JSON.parse(chat.stickyFactsBaseKeys)
+          : null,
+        stickyFactsRules: chat.stickyFactsRules,
+        branches,
       },
       usage: {
         totalInputTokens,
@@ -63,11 +92,6 @@ export async function GET(
         totalTokens,
         totalCost,
         turnCount,
-      },
-      summary: {
-        core: summaryState.core,
-        context: summaryState.context,
-        summarizedUpTo: summaryState.summarizedUpTo,
       },
     });
   } catch (error) {
@@ -83,11 +107,8 @@ export async function GET(
 
 const PatchSchema = z.object({
   name: z.string().nonempty().optional(),
-  summarizationStrategy: z.enum(["window", "percentage"]).nullable().optional(),
-  summarizationModel: z.string().nullable().optional(),
-  summarizationEvery: z.number().int().positive().nullable().optional(),
-  summarizationRatio: z.number().min(0).max(1).nullable().optional(),
-  summarizationKeep: z.number().int().nonnegative().nullable().optional(),
+  stickyFactsBaseKeys: z.array(z.string()).nullable().optional(),
+  stickyFactsRules: z.string().nullable().optional(),
 });
 
 export async function PATCH(
@@ -98,8 +119,24 @@ export async function PATCH(
     const { chatId } = await params;
     const body = await request.json();
     const data = PatchSchema.parse(body);
-    const chat = await chatService.updateChat(Number(chatId), data);
 
+    const updateData: {
+      name?: string;
+      stickyFactsBaseKeys?: string | null;
+      stickyFactsRules?: string | null;
+    } = {};
+
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.stickyFactsBaseKeys !== undefined) {
+      updateData.stickyFactsBaseKeys = data.stickyFactsBaseKeys
+        ? JSON.stringify(data.stickyFactsBaseKeys)
+        : null;
+    }
+    if (data.stickyFactsRules !== undefined) {
+      updateData.stickyFactsRules = data.stickyFactsRules;
+    }
+
+    const chat = await repo.updateChat(Number(chatId), updateData);
     return Response.json({ chat });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -124,7 +161,7 @@ export async function DELETE(
 ) {
   try {
     const { chatId } = await params;
-    await chatService.deleteChat(Number(chatId));
+    await repo.deleteChat(Number(chatId));
     return Response.json({ success: true });
   } catch (error) {
     if (error instanceof AppError) {

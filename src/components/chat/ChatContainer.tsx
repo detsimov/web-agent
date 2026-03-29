@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { InstructionsDialog } from "@/components/settings/InstructionsDialog";
+import type { BranchTab } from "@/components/chat/BranchTabs";
+import { BranchTabs } from "@/components/chat/BranchTabs";
 import type {
-  SummarizationConfig,
-  SummaryState,
-} from "@/components/settings/SummarizationSettings";
+  BranchConfig,
+  BranchContextState,
+} from "@/components/settings/BranchSettings";
 import { ChatSidebar } from "@/components/sidebar/ChatSidebar";
+import { ContextStateDialog } from "@/components/ui/ContextStateDialog";
 import { Header } from "@/components/ui/Header";
+import { SettingsDialog } from "@/components/ui/SettingsDialog";
+import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { useChat } from "@/hooks/useChat";
 import { useModels } from "@/hooks/useModels";
 import { DEFAULT_INSTRUCTIONS } from "@/lib/agent/constants";
@@ -18,25 +22,78 @@ import { MessageList } from "./MessageList";
 const DEFAULT_MODEL = "openrouter/auto";
 const DEFAULT_MAX_TOKENS = 8192;
 
-const DEFAULT_SUMMARIZATION_CONFIG: SummarizationConfig = {
-  summarizationStrategy: null,
-  summarizationModel: null,
-  summarizationEvery: null,
-  summarizationRatio: null,
-  summarizationKeep: null,
+type ApiBranch = {
+  id: number;
+  name: string;
+  parentBranchId: number | null;
+  forkedAtMsgId: number | null;
+  contextMode: string;
+  model: string | null;
+  slidingWindowSize: number;
+  stickyFactsEnabled: number;
+  stickyFactsEvery: number;
+  stickyFactsModel: string | null;
+  summarizationTrigger: string | null;
+  summarizationModel: string | null;
+  summarizationEvery: number | null;
+  summarizationRatio: number | null;
+  summarizationKeep: number | null;
+  messages: Array<{
+    id: number;
+    role: string;
+    content: string;
+    usage?: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      cost: number | null;
+    } | null;
+  }>;
+  contextState: BranchContextState | null;
 };
 
+function makeDefaultBranch(branchId: number): ApiBranch {
+  return {
+    id: branchId,
+    name: "main",
+    parentBranchId: null,
+    forkedAtMsgId: null,
+    contextMode: "none",
+    model: null,
+    slidingWindowSize: 20,
+    stickyFactsEnabled: 0,
+    stickyFactsEvery: 1,
+    stickyFactsModel: null,
+    summarizationTrigger: null,
+    summarizationModel: null,
+    summarizationEvery: null,
+    summarizationRatio: null,
+    summarizationKeep: null,
+    messages: [],
+    contextState: null,
+  };
+}
+
 export function ChatContainer() {
+  return (
+    <ToastProvider>
+      <ChatContainerInner />
+    </ToastProvider>
+  );
+}
+
+function ChatContainerInner() {
+  const { showToast } = useToast();
   const { models, isLoading: modelsLoading } = useModels();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
   const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS);
   const [instructions, setInstructions] = useState(DEFAULT_INSTRUCTIONS);
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextStateOpen, setContextStateOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
+  const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
-  const [summarizationConfig, setSummarizationConfig] =
-    useState<SummarizationConfig>(DEFAULT_SUMMARIZATION_CONFIG);
-  const [summaryState, setSummaryState] = useState<SummaryState | null>(null);
+  const [branches, setBranches] = useState<ApiBranch[]>([]);
 
   const selectedModelData = useMemo(
     () => models.find((m) => m.id === selectedModel),
@@ -45,20 +102,79 @@ export function ChatContainer() {
 
   const maxTokensLimit = selectedModelData?.context_length ?? 200_000;
 
+  const activeBranch = useMemo(
+    () => branches.find((b) => b.id === activeBranchId),
+    [branches, activeBranchId],
+  );
+
+  const branchConfig: BranchConfig | null = activeBranch
+    ? {
+        contextMode: activeBranch.contextMode,
+        model: activeBranch.model,
+        slidingWindowSize: activeBranch.slidingWindowSize,
+        stickyFactsEnabled: activeBranch.stickyFactsEnabled,
+        stickyFactsEvery: activeBranch.stickyFactsEvery,
+        stickyFactsModel: activeBranch.stickyFactsModel,
+        summarizationTrigger: activeBranch.summarizationTrigger,
+        summarizationModel: activeBranch.summarizationModel,
+        summarizationEvery: activeBranch.summarizationEvery,
+        summarizationRatio: activeBranch.summarizationRatio,
+        summarizationKeep: activeBranch.summarizationKeep,
+      }
+    : null;
+
+  const branchContextState: BranchContextState | null =
+    activeBranch?.contextState ?? null;
+
+  const branchTabs: BranchTab[] = useMemo(
+    () =>
+      branches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        parentBranchId: b.parentBranchId,
+      })),
+    [branches],
+  );
+
+  const forkedAtMsgId = activeBranch?.forkedAtMsgId ?? null;
+
   const {
     messages,
     isLoading,
     error,
     sendMessage,
+    abort,
     reset,
     loadMessages,
     removeMessage,
+    restoreMessage,
   } = useChat({
     model: selectedModel,
     maxTokens,
     instructions,
     chatId: activeChatId,
+    branchId: activeBranchId,
   });
+
+  const loadBranchMessages = useCallback(
+    (branch: ApiBranch, allBranches: ApiBranch[]) => {
+      let msgs: ChatMessage[];
+      if (branch.parentBranchId && branch.forkedAtMsgId) {
+        const mainBranch = allBranches.find((b) => !b.parentBranchId);
+        const parentMsgs = mainBranch
+          ? mainBranch.messages
+              .filter((m) => m.id <= (branch.forkedAtMsgId as number))
+              .map(toDisplayMessage)
+          : [];
+        const ownMsgs = branch.messages.map(toDisplayMessage);
+        msgs = [...parentMsgs, ...ownMsgs];
+      } else {
+        msgs = branch.messages.map(toDisplayMessage);
+      }
+      loadMessages(msgs);
+    },
+    [loadMessages],
+  );
 
   const handleSelectChat = useCallback(
     async (chatId: number) => {
@@ -66,36 +182,20 @@ export function ChatContainer() {
       const res = await fetch(`/api/chats/${chatId}`);
       if (res.ok) {
         const data = await res.json();
-        const msgs: ChatMessage[] = data.chat.messages.map(
-          (m: {
-            id: number;
-            role: string;
-            content: string;
-            usage?: {
-              inputTokens: number;
-              outputTokens: number;
-              totalTokens: number;
-              cost: number | null;
-            } | null;
-          }) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            usage: m.usage ?? undefined,
-          }),
-        );
-        loadMessages(msgs);
-        setSummarizationConfig({
-          summarizationStrategy: data.chat.summarizationStrategy ?? null,
-          summarizationModel: data.chat.summarizationModel ?? null,
-          summarizationEvery: data.chat.summarizationEvery ?? null,
-          summarizationRatio: data.chat.summarizationRatio ?? null,
-          summarizationKeep: data.chat.summarizationKeep ?? null,
-        });
-        setSummaryState(data.summary ?? null);
+        const apiBranches: ApiBranch[] = data.chat.branches;
+        setBranches(apiBranches);
+
+        const mainBranch = apiBranches.find((b) => !b.parentBranchId);
+        if (mainBranch) {
+          setActiveBranchId(mainBranch.id);
+          if (mainBranch.model) {
+            setSelectedModel(mainBranch.model);
+          }
+          loadBranchMessages(mainBranch, apiBranches);
+        }
       }
     },
-    [loadMessages],
+    [loadBranchMessages],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -110,10 +210,11 @@ export function ChatContainer() {
     });
     if (res.ok) {
       const data = await res.json();
+      const mainBranchId = data.chat.mainBranchId;
       setActiveChatId(data.chat.id);
+      setActiveBranchId(mainBranchId);
+      setBranches([makeDefaultBranch(mainBranchId)]);
       reset();
-      setSummarizationConfig(DEFAULT_SUMMARIZATION_CONFIG);
-      setSummaryState(null);
       setSidebarRefresh((n) => n + 1);
     }
   }, [reset, maxTokens, instructions]);
@@ -122,50 +223,190 @@ export function ChatContainer() {
     (chatId: number) => {
       if (chatId === activeChatId) {
         setActiveChatId(null);
+        setActiveBranchId(null);
+        setBranches([]);
         reset();
-        setSummarizationConfig(DEFAULT_SUMMARIZATION_CONFIG);
-        setSummaryState(null);
       }
     },
     [activeChatId, reset],
   );
 
+  const [_pendingDeletes, setPendingDeletes] = useState<
+    Array<{
+      messageId: number;
+      snapshot: ChatMessage;
+      index: number;
+      timerId: ReturnType<typeof setTimeout>;
+    }>
+  >([]);
+
   const handleDeleteMessage = useCallback(
-    async (messageId: number) => {
-      if (!activeChatId) return;
-      const res = await fetch(
-        `/api/chats/${activeChatId}/messages/${messageId}`,
-        { method: "DELETE" },
-      );
-      if (res.ok) {
-        removeMessage(messageId);
-      }
+    (messageId: number) => {
+      if (!activeChatId || !activeBranchId) return;
+
+      const index = messages.findIndex((m) => m.id === messageId);
+      if (index === -1) return;
+      const snapshot = messages[index];
+
+      removeMessage(messageId);
+
+      const timerId = setTimeout(() => {
+        fetch(
+          `/api/chats/${activeChatId}/messages/${messageId}?branchId=${activeBranchId}`,
+          { method: "DELETE" },
+        );
+        setPendingDeletes((prev) =>
+          prev.filter((d) => d.messageId !== messageId),
+        );
+      }, 5000);
+
+      setPendingDeletes((prev) => [
+        ...prev,
+        { messageId, snapshot, index, timerId },
+      ]);
+
+      showToast({
+        message: "Message deleted",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(timerId);
+            restoreMessage(snapshot, index);
+            setPendingDeletes((prev) =>
+              prev.filter((d) => d.messageId !== messageId),
+            );
+          },
+        },
+      });
     },
-    [activeChatId, removeMessage],
+    [
+      activeChatId,
+      activeBranchId,
+      messages,
+      removeMessage,
+      showToast,
+      restoreMessage,
+    ],
   );
+
+  const refreshBranches = useCallback(async () => {
+    if (!activeChatId) return;
+    const res = await fetch(`/api/chats/${activeChatId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setBranches(data.chat.branches as ApiBranch[]);
+    }
+  }, [activeChatId]);
 
   const handleSend = useCallback(
     async (content: string) => {
       await sendMessage(content);
       setSidebarRefresh((n) => n + 1);
+      await refreshBranches();
     },
-    [sendMessage],
+    [sendMessage, refreshBranches],
   );
 
-  const handleSummarizationUpdate = useCallback(
-    async (patch: Partial<SummarizationConfig>) => {
-      if (!activeChatId) return;
-      const updated = { ...summarizationConfig, ...patch };
-      setSummarizationConfig(updated);
+  const handleSwitchBranch = useCallback(
+    (branchId: number) => {
+      const branch = branches.find((b) => b.id === branchId);
+      if (branch) {
+        setActiveBranchId(branchId);
+        if (branch.model) {
+          setSelectedModel(branch.model);
+        }
+        loadBranchMessages(branch, branches);
+      }
+    },
+    [branches, loadBranchMessages],
+  );
 
-      await fetch(`/api/chats/${activeChatId}`, {
+  const handleCreateFork = useCallback(async () => {
+    if (!activeChatId) return;
+    const mainBranch = branches.find((b) => !b.parentBranchId);
+    if (!mainBranch || mainBranch.messages.length === 0) return;
+
+    const lastMsg = mainBranch.messages[mainBranch.messages.length - 1];
+    const name = prompt("Branch name:");
+    if (!name?.trim()) return;
+
+    const res = await fetch(`/api/chats/${activeChatId}/branches`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), forkedAtMsgId: lastMsg.id }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const newBranchId = data.branch.id;
+      await handleSelectChat(activeChatId);
+      setActiveBranchId(newBranchId);
+    }
+  }, [activeChatId, branches, handleSelectChat]);
+
+  const handleForkFromMessage = useCallback(
+    async (messageId: number) => {
+      if (!activeChatId) return;
+      const name = prompt("Branch name:");
+      if (!name?.trim()) return;
+
+      const res = await fetch(`/api/chats/${activeChatId}/branches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), forkedAtMsgId: messageId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newBranchId = data.branch.id;
+        await handleSelectChat(activeChatId);
+        setActiveBranchId(newBranchId);
+      }
+    },
+    [activeChatId, handleSelectChat],
+  );
+
+  const handleDeleteBranch = useCallback(
+    async (branchId: number) => {
+      if (!confirm("Delete this branch?")) return;
+      const res = await fetch(`/api/branches/${branchId}`, {
+        method: "DELETE",
+      });
+      if (res.ok && activeChatId) {
+        await handleSelectChat(activeChatId);
+      }
+    },
+    [activeChatId, handleSelectChat],
+  );
+
+  const handleRenameBranch = useCallback(
+    async (branchId: number, name: string) => {
+      await fetch(`/api/branches/${branchId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      setBranches((prev) =>
+        prev.map((b) => (b.id === branchId ? { ...b, name } : b)),
+      );
+    },
+    [],
+  );
+
+  const handleBranchSettingsUpdate = useCallback(
+    async (patch: Partial<BranchConfig>) => {
+      if (!activeBranchId) return;
+      setBranches((prev) =>
+        prev.map((b) => (b.id === activeBranchId ? { ...b, ...patch } : b)),
+      );
+      await fetch(`/api/branches/${activeBranchId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
     },
-    [activeChatId, summarizationConfig],
+    [activeBranchId],
   );
+
+  const isMainBranch = activeBranch ? !activeBranch.parentBranchId : true;
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -178,14 +419,19 @@ export function ChatContainer() {
         messages={messages}
         contextLength={selectedModelData?.context_length ?? 200_000}
         pricing={selectedModelData?.pricing}
-        summarizationConfig={activeChatId ? summarizationConfig : null}
-        onSummarizationUpdate={handleSummarizationUpdate}
-        summaryState={activeChatId ? summaryState : null}
-        models={models}
-        modelsLoading={modelsLoading}
+        contextState={activeChatId ? branchContextState : null}
+        onOpenContextState={() => setContextStateOpen(true)}
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <Header
+          modelName={selectedModelData?.name ?? selectedModel}
+          maxTokens={maxTokens}
+          modelsLoading={modelsLoading}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
           models={models}
           modelsLoading={modelsLoading}
           selectedModel={selectedModel}
@@ -193,21 +439,37 @@ export function ChatContainer() {
           maxTokens={maxTokens}
           onMaxTokensChange={setMaxTokens}
           maxTokensLimit={maxTokensLimit}
-          onOpenInstructions={() => setInstructionsOpen(true)}
+          instructions={instructions}
+          onInstructionsChange={setInstructions}
+          branchConfig={activeChatId ? branchConfig : null}
+          onBranchSettingsUpdate={handleBranchSettingsUpdate}
+          branchName={activeBranch?.name}
         />
-        <InstructionsDialog
-          open={instructionsOpen}
-          value={instructions}
-          onSave={setInstructions}
-          onClose={() => setInstructionsOpen(false)}
+        <ContextStateDialog
+          open={contextStateOpen}
+          onClose={() => setContextStateOpen(false)}
+          contextState={activeChatId ? branchContextState : null}
         />
         {activeChatId ? (
           <>
+            <BranchTabs
+              branches={branchTabs}
+              activeBranchId={activeBranchId ?? 0}
+              onSwitchBranch={handleSwitchBranch}
+              onCreateFork={handleCreateFork}
+              onDeleteBranch={handleDeleteBranch}
+              onRenameBranch={handleRenameBranch}
+            />
             <MessageList
               messages={messages}
               isLoading={isLoading}
               onDeleteMessage={handleDeleteMessage}
               showDeleteButton
+              forkedAtMsgId={forkedAtMsgId}
+              isMainBranch={isMainBranch}
+              onForkFromMessage={
+                isMainBranch ? handleForkFromMessage : undefined
+              }
             />
             {error && (
               <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
@@ -237,4 +499,23 @@ export function ChatContainer() {
       </div>
     </div>
   );
+}
+
+function toDisplayMessage(m: {
+  id: number;
+  role: string;
+  content: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    cost: number | null;
+  } | null;
+}): ChatMessage {
+  return {
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    usage: m.usage ?? undefined,
+  };
 }

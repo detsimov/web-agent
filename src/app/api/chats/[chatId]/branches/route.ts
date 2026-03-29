@@ -2,10 +2,16 @@ import * as z from "zod";
 import { AppError } from "@/lib/error/AppError";
 import { repo } from "@/lib/repository/DrizzleChatRepository";
 
-export async function GET() {
+type Params = { chatId: string };
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<Params> },
+) {
   try {
-    const chats = await repo.listChats();
-    return Response.json({ chats });
+    const { chatId } = await params;
+    const branches = await repo.listBranches(Number(chatId));
+    return Response.json({ branches });
   } catch (error) {
     if (error instanceof AppError) {
       return Response.json(
@@ -17,19 +23,21 @@ export async function GET() {
   }
 }
 
-const CreateChatSchema = z.object({
+const CreateBranchSchema = z.object({
   name: z.string().nonempty(),
-  maxTokens: z.number().int().positive().optional(),
-  systemMessage: z.string().optional(),
+  forkedAtMsgId: z.number().int().positive(),
 });
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<Params> },
+) {
   try {
+    const { chatId } = await params;
     const body = await request.json();
-    const data = CreateChatSchema.parse(body);
-    const chat = await repo.createChat(data);
-
-    return Response.json({ chat }, { status: 201 });
+    const data = CreateBranchSchema.parse(body);
+    const branch = await repo.createBranch(Number(chatId), data);
+    return Response.json({ branch }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json(

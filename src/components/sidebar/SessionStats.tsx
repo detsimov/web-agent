@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
+import type { BranchContextState } from "@/components/settings/BranchSettings";
 import type { ChatMessage } from "@/lib/types";
 
 type Pricing = {
@@ -13,6 +14,8 @@ type Props = {
   messages: ChatMessage[];
   contextLength: number;
   pricing?: Pricing | null;
+  contextState?: BranchContextState | null;
+  onOpenContextState?: () => void;
 };
 
 function formatTokens(n: number): string {
@@ -34,7 +37,13 @@ type SparklinePoint = {
   outputTokens: number;
 };
 
-export function SessionStats({ messages, contextLength, pricing }: Props) {
+export function SessionStats({
+  messages,
+  contextLength,
+  pricing,
+  contextState,
+  onOpenContextState,
+}: Props) {
   const {
     totalInput,
     totalOutput,
@@ -106,15 +115,46 @@ export function SessionStats({ messages, contextLength, pricing }: Props) {
         )}
       </div>
 
+      {/* Facts + Context State */}
+      {contextState && onOpenContextState && (
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {Object.keys(contextState.facts).length} facts
+          </span>
+          <button
+            type="button"
+            onClick={onOpenContextState}
+            className="rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+            aria-label="View context state"
+            title="View context state"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Cumulative totals */}
       {hasData &&
         (() => {
           const promptRate = Number.parseFloat(pricing?.prompt ?? "0");
           const completionRate = Number.parseFloat(pricing?.completion ?? "0");
-          const inputCost = promptRate ? totalInput * promptRate : null;
-          const outputCost = completionRate
-            ? totalOutput * completionRate
-            : null;
+          const inputCost = promptRate > 0 ? totalInput * promptRate : null;
+          const outputCost =
+            completionRate > 0 ? totalOutput * completionRate : null;
 
           return (
             <div className="mb-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">

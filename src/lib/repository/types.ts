@@ -1,0 +1,97 @@
+import type { TurnResult } from "@/lib/pipeline/types";
+import type { PersistedMessage } from "@/lib/types";
+
+export type ChatRow = {
+  id: number;
+  name: string;
+  maxTokens: number;
+  systemMessage: string;
+  stickyFactsBaseKeys: string | null;
+  stickyFactsRules: string | null;
+  createdAt: Date;
+};
+
+export type BranchRow = {
+  id: number;
+  chatId: number;
+  name: string;
+  parentBranchId: number | null;
+  forkedAtMsgId: number | null;
+  contextMode: string;
+  model: string | null;
+  slidingWindowSize: number;
+  stickyFactsEnabled: number;
+  stickyFactsEvery: number;
+  stickyFactsModel: string | null;
+  summarizationTrigger: string | null;
+  summarizationModel: string | null;
+  summarizationEvery: number | null;
+  summarizationRatio: number | null;
+  summarizationKeep: number | null;
+  createdAt: Date;
+};
+
+export type ContextState = {
+  facts: Record<string, string>;
+  context: string;
+  summarizedUpTo: number;
+  factsExtractedUpTo: number;
+};
+
+export type CreateChatInput = {
+  name: string;
+  maxTokens?: number;
+  systemMessage?: string;
+};
+
+export type CreateBranchInput = {
+  name: string;
+  forkedAtMsgId: number;
+};
+
+export interface IChatRepository {
+  // --- Chats ---
+  listChats(): Promise<ChatRow[]>;
+  createChat(
+    input: CreateChatInput,
+  ): Promise<ChatRow & { mainBranchId: number }>;
+  getChat(chatId: number): Promise<ChatRow>;
+  updateChat(
+    chatId: number,
+    data: Partial<
+      Pick<ChatRow, "name" | "stickyFactsBaseKeys" | "stickyFactsRules">
+    >,
+  ): Promise<ChatRow>;
+  deleteChat(chatId: number): Promise<void>;
+
+  // --- Branches ---
+  getBranch(branchId: number): Promise<BranchRow>;
+  getMainBranch(chatId: number): Promise<BranchRow>;
+  listBranches(chatId: number): Promise<BranchRow[]>;
+  createBranch(chatId: number, input: CreateBranchInput): Promise<BranchRow>;
+  updateBranch(
+    branchId: number,
+    data: Partial<Omit<BranchRow, "id" | "chatId" | "createdAt">>,
+  ): Promise<BranchRow>;
+  deleteBranch(branchId: number): Promise<void>;
+  renameBranch(branchId: number, name: string): Promise<BranchRow>;
+
+  // --- Messages ---
+  resolveMessages(branch: BranchRow): Promise<PersistedMessage[]>;
+  deleteMessage(branchId: number, messageId: number): Promise<void>;
+
+  // --- Context state ---
+  loadContextState(branchId: number): Promise<ContextState>;
+
+  // --- Usage ---
+  getLastUsage(branchId: number): Promise<{ totalTokens: number }>;
+
+  // --- Full chat with relations (for UI) ---
+  getChatWithMessages(chatId: number): Promise<unknown>;
+
+  // --- Atomic turn commit ---
+  commitTurn(
+    branchId: number,
+    turn: TurnResult,
+  ): Promise<{ assistantMessageId: number }>;
+}

@@ -1,13 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type {
-  SummarizationConfig,
-  SummaryState,
-} from "@/components/settings/SummarizationSettings";
-import { SummarizationSettings } from "@/components/settings/SummarizationSettings";
+import type { BranchContextState } from "@/components/settings/BranchSettings";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import type { Chat, ChatMessage, Model } from "@/lib/types";
+import type { Chat, ChatMessage } from "@/lib/types";
 import { ChatItem } from "./ChatItem";
 import { SessionStats } from "./SessionStats";
 
@@ -20,11 +16,8 @@ type Props = {
   messages: ChatMessage[];
   contextLength: number;
   pricing?: { prompt: string; completion: string } | null;
-  summarizationConfig: SummarizationConfig | null;
-  onSummarizationUpdate: (patch: Partial<SummarizationConfig>) => void;
-  summaryState: SummaryState | null;
-  models: Model[];
-  modelsLoading: boolean;
+  contextState: BranchContextState | null;
+  onOpenContextState: () => void;
 };
 
 export function ChatSidebar({
@@ -36,11 +29,8 @@ export function ChatSidebar({
   messages,
   contextLength,
   pricing,
-  summarizationConfig,
-  onSummarizationUpdate,
-  summaryState,
-  models,
-  modelsLoading,
+  contextState,
+  onOpenContextState,
 }: Props) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [isOpen, setIsOpen] = useState(true);
@@ -156,19 +146,12 @@ export function ChatSidebar({
           )}
         </div>
 
-        {activeChatId && summarizationConfig && (
-          <SummarizationSettings
-            config={summarizationConfig}
-            onUpdate={onSummarizationUpdate}
-            summaryState={summaryState}
-            models={models}
-            modelsLoading={modelsLoading}
-          />
-        )}
         <SessionStats
           messages={messages}
           contextLength={contextLength}
           pricing={pricing}
+          contextState={contextState}
+          onOpenContextState={onOpenContextState}
         />
       </aside>
 

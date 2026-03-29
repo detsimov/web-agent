@@ -68,3 +68,23 @@ export async function chat(
       : null,
   };
 }
+
+export function chatStream(messages: Message[], options: ChatOptions) {
+  const systemMessage = messages.find((m) => m.role === "system");
+  const input = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  return openRouter.beta.responses.send({
+    openResponsesRequest: {
+      input,
+      instructions: systemMessage?.content,
+      model: options.model,
+      maxOutputTokens: options.maxTokens,
+      provider: {
+        sort: "price",
+      },
+      stream: true,
+    },
+  });
+}
