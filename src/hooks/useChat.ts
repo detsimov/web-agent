@@ -3,6 +3,13 @@
 import { useCallback, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/types";
 
+export type WorkingMemoryData = {
+  summary: string;
+  detail: string;
+  steps: Array<{ name: string; status: "done" | "active" | "pending" }>;
+  history: string[];
+};
+
 type UseChatOptions = {
   model?: string;
   maxTokens?: number;
@@ -15,6 +22,9 @@ export function useChat(options: UseChatOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workingMemory, setWorkingMemory] = useState<WorkingMemoryData | null>(
+    null,
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   const abort = useCallback(() => {
@@ -74,7 +84,12 @@ export function useChat(options: UseChatOptions = {}) {
         const contentType = res.headers.get("content-type") ?? "";
 
         if (contentType.includes("text/event-stream")) {
-          await handleStreamingResponse(res, setMessages, controller.signal);
+          await handleStreamingResponse(
+            res,
+            setMessages,
+            setWorkingMemory,
+            controller.signal,
+          );
         } else {
           const data = await res.json();
           const assistantMessage: ChatMessage = {
@@ -111,6 +126,7 @@ export function useChat(options: UseChatOptions = {}) {
     setMessages([]);
     setError(null);
     setIsLoading(false);
+    setWorkingMemory(null);
   }, [abort]);
 
   const loadMessages = useCallback(
@@ -139,6 +155,8 @@ export function useChat(options: UseChatOptions = {}) {
     messages,
     isLoading,
     error,
+    workingMemory,
+    setWorkingMemory,
     sendMessage,
     abort,
     reset,
@@ -151,6 +169,9 @@ export function useChat(options: UseChatOptions = {}) {
 async function handleStreamingResponse(
   res: Response,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setWorkingMemory: React.Dispatch<
+    React.SetStateAction<WorkingMemoryData | null>
+  >,
   signal: AbortSignal,
 ) {
   const reader = res.body?.getReader();
@@ -180,7 +201,8 @@ async function handleStreamingResponse(
               content: string;
               usage: ChatMessage["usage"];
             }
-          | { type: "error"; error: string };
+          | { type: "error"; error: string }
+          | { type: "working_memory"; data: WorkingMemoryData };
 
         if (chunk.type === "delta") {
           if (!assistantAdded) {
@@ -225,6 +247,10 @@ async function handleStreamingResponse(
 
         if (chunk.type === "error") {
           throw new Error(chunk.error);
+        }
+
+        if (chunk.type === "working_memory") {
+          setWorkingMemory(chunk.data);
         }
       }
     }

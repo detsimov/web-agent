@@ -54,7 +54,7 @@ export class StickyFactsStrategy implements ContextStrategy {
         factsExtractedUpTo: lastId,
       },
       usage: addUsage(state.usage, result.usage),
-    };
+    } satisfies PipelineState;
   }
 
   private buildPrompt(

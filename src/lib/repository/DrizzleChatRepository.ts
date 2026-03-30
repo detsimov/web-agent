@@ -3,12 +3,18 @@ import { db } from "@/db";
 import {
   branchContextStateTable,
   branchTable,
+  branchWorkingMemoryTable,
   chatTable,
+  globalFactsTable,
   messageTable,
   messageUsageTable,
 } from "@/db/schema";
 import { AppError } from "@/lib/error/AppError";
-import type { TurnResult } from "@/lib/pipeline/types";
+import {
+  EMPTY_WORKING_MEMORY,
+  type TurnResult,
+  type WorkingMemory,
+} from "@/lib/pipeline/types";
 import type { PersistedMessage } from "@/lib/types";
 import type {
   BranchRow,
@@ -74,7 +80,14 @@ export class DrizzleChatRepository implements IChatRepository {
   async updateChat(
     chatId: number,
     data: Partial<
-      Pick<ChatRow, "name" | "stickyFactsBaseKeys" | "stickyFactsRules">
+      Pick<
+        ChatRow,
+        | "name"
+        | "stickyFactsBaseKeys"
+        | "stickyFactsRules"
+        | "factsExtractionModel"
+        | "factsExtractionRules"
+      >
     >,
   ): Promise<ChatRow> {
     const set: Record<string, unknown> = {};
@@ -83,6 +96,10 @@ export class DrizzleChatRepository implements IChatRepository {
       set.stickyFactsBaseKeys = data.stickyFactsBaseKeys;
     if (data.stickyFactsRules !== undefined)
       set.stickyFactsRules = data.stickyFactsRules;
+    if (data.factsExtractionModel !== undefined)
+      set.factsExtractionModel = data.factsExtractionModel;
+    if (data.factsExtractionRules !== undefined)
+      set.factsExtractionRules = data.factsExtractionRules;
 
     if (Object.keys(set).length === 0) {
       throw new AppError("No fields to update", 400, "EMPTY_UPDATE");
@@ -179,6 +196,9 @@ export class DrizzleChatRepository implements IChatRepository {
         summarizationEvery: mainBranch.summarizationEvery,
         summarizationRatio: mainBranch.summarizationRatio,
         summarizationKeep: mainBranch.summarizationKeep,
+        workingMemoryMode: mainBranch.workingMemoryMode,
+        workingMemoryModel: mainBranch.workingMemoryModel,
+        workingMemoryEvery: mainBranch.workingMemoryEvery,
       })
       .returning();
 
@@ -455,8 +475,141 @@ export class DrizzleChatRepository implements IChatRepository {
           });
       }
 
+      // 5. Upsert working memory if changed
+      if (turn.workingMemory) {
+        await tx
+          .insert(branchWorkingMemoryTable)
+          .values({
+            branchId,
+            data: JSON.stringify(turn.workingMemory),
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: branchWorkingMemoryTable.branchId,
+            set: {
+              data: JSON.stringify(turn.workingMemory),
+              updatedAt: new Date(),
+            },
+          });
+      }
+
       return { assistantMessageId: assistantMsg.id };
     });
+  }
+
+  // --- Global facts ---
+
+  async loadGlobalFacts(): Promise<Record<string, string>> {
+    const rows = await db.select().from(globalFactsTable);
+    const facts: Record<string, string> = {};
+    for (const row of rows) {
+      facts[row.key] = row.value;
+    }
+    return facts;
+  }
+
+  async upsertGlobalFacts(facts: Record<string, string>): Promise<void> {
+    for (const [key, value] of Object.entries(facts)) {
+      if (value === null || value === undefined) {
+        await db.delete(globalFactsTable).where(eq(globalFactsTable.key, key));
+      } else {
+        await db
+          .insert(globalFactsTable)
+          .values({ key, value, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: globalFactsTable.key,
+            set: { value, updatedAt: new Date() },
+          });
+      }
+    }
+  }
+
+  async deleteGlobalFact(key: string): Promise<void> {
+    const [deleted] = await db
+      .delete(globalFactsTable)
+      .where(eq(globalFactsTable.key, key))
+      .returning();
+    if (!deleted) {
+      throw new AppError("Global fact not found", 404, "FACT_NOT_FOUND");
+    }
+  }
+
+  async listGlobalFacts(): Promise<
+    Array<{ key: string; value: string; updatedAt: Date }>
+  > {
+    const rows = await db
+      .select({
+        key: globalFactsTable.key,
+        value: globalFactsTable.value,
+        updatedAt: globalFactsTable.updatedAt,
+      })
+      .from(globalFactsTable)
+      .orderBy(asc(globalFactsTable.key));
+    return rows;
+  }
+
+  // --- Working memory ---
+
+  async loadWorkingMemory(branchId: number): Promise<WorkingMemory> {
+    const row = await db.query.branchWorkingMemoryTable.findFirst({
+      where: eq(branchWorkingMemoryTable.branchId, branchId),
+    });
+    if (!row) return { ...EMPTY_WORKING_MEMORY };
+    return JSON.parse(row.data) as WorkingMemory;
+  }
+
+  async saveWorkingMemory(
+    branchId: number,
+    data: WorkingMemory,
+  ): Promise<void> {
+    await db
+      .insert(branchWorkingMemoryTable)
+      .values({
+        branchId,
+        data: JSON.stringify(data),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: branchWorkingMemoryTable.branchId,
+        set: {
+          data: JSON.stringify(data),
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // --- Branch facts (for background extraction) ---
+
+  async updateBranchFacts(
+    branchId: number,
+    facts: Record<string, string>,
+  ): Promise<void> {
+    const current = await this.loadContextState(branchId);
+    const merged = { ...current.facts };
+    for (const [key, value] of Object.entries(facts)) {
+      if (value === null || value === undefined) {
+        delete merged[key];
+      } else {
+        merged[key] = value;
+      }
+    }
+    await db
+      .insert(branchContextStateTable)
+      .values({
+        branchId,
+        facts: JSON.stringify(merged),
+        context: current.context,
+        summarizedUpTo: current.summarizedUpTo,
+        factsExtractedUpTo: current.factsExtractedUpTo,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: branchContextStateTable.branchId,
+        set: {
+          facts: JSON.stringify(merged),
+          updatedAt: new Date(),
+        },
+      });
   }
 }
 

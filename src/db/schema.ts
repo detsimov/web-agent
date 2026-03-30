@@ -8,6 +8,8 @@ export const chatTable = sqliteTable("chat_table", {
   systemMessage: text("system_message").notNull(),
   stickyFactsBaseKeys: text("sticky_facts_base_keys"),
   stickyFactsRules: text("sticky_facts_rules"),
+  factsExtractionModel: text("facts_extraction_model"),
+  factsExtractionRules: text("facts_extraction_rules"),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -32,6 +34,9 @@ export const branchTable = sqliteTable("branch", {
   summarizationEvery: int("summarization_every"),
   summarizationRatio: real("summarization_ratio"),
   summarizationKeep: int("summarization_keep"),
+  workingMemoryMode: text("working_memory_mode").notNull().default("off"),
+  workingMemoryModel: text("working_memory_model"),
+  workingMemoryEvery: int("working_memory_every").notNull().default(1),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -59,6 +64,33 @@ export const messageUsageTable = sqliteTable("message_usage", {
   outputTokens: int("output_tokens").notNull(),
   totalTokens: int("total_tokens").notNull(),
   cost: real(),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const globalFactsTable = sqliteTable("global_facts", {
+  id: int().primaryKey({ autoIncrement: true }),
+  key: text().notNull().unique(),
+  value: text().notNull(),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const branchWorkingMemoryTable = sqliteTable("branch_working_memory", {
+  id: int().primaryKey({ autoIncrement: true }),
+  branchId: int("branch_id")
+    .notNull()
+    .unique()
+    .references(() => branchTable.id, { onDelete: "cascade" }),
+  data: text().notNull(),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -98,7 +130,21 @@ export const branchRelations = relations(branchTable, ({ one, many }) => ({
     fields: [branchTable.id],
     references: [branchContextStateTable.branchId],
   }),
+  workingMemory: one(branchWorkingMemoryTable, {
+    fields: [branchTable.id],
+    references: [branchWorkingMemoryTable.branchId],
+  }),
 }));
+
+export const branchWorkingMemoryRelations = relations(
+  branchWorkingMemoryTable,
+  ({ one }) => ({
+    branch: one(branchTable, {
+      fields: [branchWorkingMemoryTable.branchId],
+      references: [branchTable.id],
+    }),
+  }),
+);
 
 export const branchContextStateRelations = relations(
   branchContextStateTable,

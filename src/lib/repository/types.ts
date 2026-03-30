@@ -1,4 +1,4 @@
-import type { TurnResult } from "@/lib/pipeline/types";
+import type { TurnResult, WorkingMemory } from "@/lib/pipeline/types";
 import type { PersistedMessage } from "@/lib/types";
 
 export type ChatRow = {
@@ -8,6 +8,8 @@ export type ChatRow = {
   systemMessage: string;
   stickyFactsBaseKeys: string | null;
   stickyFactsRules: string | null;
+  factsExtractionModel: string | null;
+  factsExtractionRules: string | null;
   createdAt: Date;
 };
 
@@ -28,6 +30,9 @@ export type BranchRow = {
   summarizationEvery: number | null;
   summarizationRatio: number | null;
   summarizationKeep: number | null;
+  workingMemoryMode: string;
+  workingMemoryModel: string | null;
+  workingMemoryEvery: number;
   createdAt: Date;
 };
 
@@ -59,7 +64,14 @@ export interface IChatRepository {
   updateChat(
     chatId: number,
     data: Partial<
-      Pick<ChatRow, "name" | "stickyFactsBaseKeys" | "stickyFactsRules">
+      Pick<
+        ChatRow,
+        | "name"
+        | "stickyFactsBaseKeys"
+        | "stickyFactsRules"
+        | "factsExtractionModel"
+        | "factsExtractionRules"
+      >
     >,
   ): Promise<ChatRow>;
   deleteChat(chatId: number): Promise<void>;
@@ -94,4 +106,22 @@ export interface IChatRepository {
     branchId: number,
     turn: TurnResult,
   ): Promise<{ assistantMessageId: number }>;
+
+  // --- Global facts ---
+  loadGlobalFacts(): Promise<Record<string, string>>;
+  upsertGlobalFacts(facts: Record<string, string>): Promise<void>;
+  deleteGlobalFact(key: string): Promise<void>;
+  listGlobalFacts(): Promise<
+    Array<{ key: string; value: string; updatedAt: Date }>
+  >;
+
+  // --- Working memory ---
+  loadWorkingMemory(branchId: number): Promise<WorkingMemory>;
+  saveWorkingMemory(branchId: number, data: WorkingMemory): Promise<void>;
+
+  // --- Branch facts (for background extraction) ---
+  updateBranchFacts(
+    branchId: number,
+    facts: Record<string, string>,
+  ): Promise<void>;
 }

@@ -45,6 +45,7 @@ export class SummarizationStrategy implements ContextStrategy {
     const lastId = toSummarize[toSummarize.length - 1].id;
 
     return {
+      ...state,
       messages: toKeep,
       facts: parsed.facts,
       context: parsed.context,

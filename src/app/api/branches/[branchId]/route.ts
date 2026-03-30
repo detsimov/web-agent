@@ -17,6 +17,9 @@ const PatchSchema = z.object({
   summarizationEvery: z.number().int().positive().nullable().optional(),
   summarizationRatio: z.number().min(0).max(1).nullable().optional(),
   summarizationKeep: z.number().int().nonnegative().nullable().optional(),
+  workingMemoryMode: z.enum(["off", "tool", "auto"]).optional(),
+  workingMemoryModel: z.string().nullable().optional(),
+  workingMemoryEvery: z.number().int().positive().optional(),
 });
 
 export async function PATCH(

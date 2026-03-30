@@ -10,6 +10,9 @@ export type BranchConfig = {
   summarizationEvery: number | null;
   summarizationRatio: number | null;
   summarizationKeep: number | null;
+  workingMemoryMode: string;
+  workingMemoryModel: string | null;
+  workingMemoryEvery: number;
 };
 
 export type BranchContextState = {

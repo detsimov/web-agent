@@ -62,6 +62,9 @@ export async function GET(
         summarizationEvery: branch.summarizationEvery,
         summarizationRatio: branch.summarizationRatio,
         summarizationKeep: branch.summarizationKeep,
+        workingMemoryMode: branch.workingMemoryMode,
+        workingMemoryModel: branch.workingMemoryModel,
+        workingMemoryEvery: branch.workingMemoryEvery,
         createdAt: branch.createdAt,
         messages,
         contextState: contextState
@@ -84,6 +87,8 @@ export async function GET(
           ? JSON.parse(chat.stickyFactsBaseKeys)
           : null,
         stickyFactsRules: chat.stickyFactsRules,
+        factsExtractionModel: chat.factsExtractionModel,
+        factsExtractionRules: chat.factsExtractionRules,
         branches,
       },
       usage: {
@@ -109,6 +114,8 @@ const PatchSchema = z.object({
   name: z.string().nonempty().optional(),
   stickyFactsBaseKeys: z.array(z.string()).nullable().optional(),
   stickyFactsRules: z.string().nullable().optional(),
+  factsExtractionModel: z.string().nullable().optional(),
+  factsExtractionRules: z.string().nullable().optional(),
 });
 
 export async function PATCH(
@@ -124,6 +131,8 @@ export async function PATCH(
       name?: string;
       stickyFactsBaseKeys?: string | null;
       stickyFactsRules?: string | null;
+      factsExtractionModel?: string | null;
+      factsExtractionRules?: string | null;
     } = {};
 
     if (data.name !== undefined) updateData.name = data.name;
@@ -134,6 +143,12 @@ export async function PATCH(
     }
     if (data.stickyFactsRules !== undefined) {
       updateData.stickyFactsRules = data.stickyFactsRules;
+    }
+    if (data.factsExtractionModel !== undefined) {
+      updateData.factsExtractionModel = data.factsExtractionModel;
+    }
+    if (data.factsExtractionRules !== undefined) {
+      updateData.factsExtractionRules = data.factsExtractionRules;
     }
 
     const chat = await repo.updateChat(Number(chatId), updateData);

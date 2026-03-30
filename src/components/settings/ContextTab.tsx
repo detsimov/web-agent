@@ -288,6 +288,71 @@ export function ContextTab({
           </div>
         )}
       </div>
+
+      {/* Working Memory */}
+      <div>
+        <span className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Working Memory
+        </span>
+        <div className="flex gap-4">
+          {(["off", "tool", "auto"] as const).map((value) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"
+            >
+              <input
+                type="radio"
+                name="settings-wm-mode"
+                value={value}
+                checked={(config.workingMemoryMode ?? "off") === value}
+                onChange={() => onUpdate({ workingMemoryMode: value })}
+                className="accent-zinc-700 dark:accent-zinc-300"
+              />
+              {value === "off" ? "Off" : value === "tool" ? "Tool" : "Auto"}
+            </label>
+          ))}
+        </div>
+
+        {config.workingMemoryMode === "auto" && (
+          <div className="mt-3 flex flex-col gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+              Auto Mode
+            </span>
+            <div>
+              <span className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Model
+              </span>
+              <ModelSelector
+                models={models}
+                value={config.workingMemoryModel ?? ""}
+                onChange={(id) => onUpdate({ workingMemoryModel: id })}
+                isLoading={modelsLoading}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="wm-every"
+                className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Extract every (turns)
+              </label>
+              <input
+                id="wm-every"
+                type="number"
+                min={1}
+                value={config.workingMemoryEvery ?? 1}
+                onChange={(e) =>
+                  onUpdate({
+                    workingMemoryEvery:
+                      Number.parseInt(e.target.value, 10) || 1,
+                  })
+                }
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { ToolDefinition } from "@/lib/agent/types";
 import { AppError } from "@/lib/error/AppError";
 import { openRouter } from "@/lib/openrouter";
 import type { Message } from "@/lib/types";
@@ -5,6 +6,7 @@ import type { Message } from "@/lib/types";
 export type ChatOptions = {
   model: string;
   maxTokens?: number;
+  tools?: ToolDefinition[];
 };
 
 export type ChatCompletion = {
@@ -18,6 +20,23 @@ export type ChatUsage = {
   totalTokens: number;
   cost: number | null;
 };
+
+function toApiTools(tools?: ToolDefinition[]):
+  | Array<{
+      type: "function";
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    }>
+  | undefined {
+  if (!tools?.length) return undefined;
+  return tools.map((t) => ({
+    type: "function" as const,
+    name: t.function.name,
+    description: t.function.description,
+    parameters: t.function.parameters,
+  }));
+}
 
 export async function chat(
   messages: Message[],
@@ -34,6 +53,7 @@ export async function chat(
       instructions: systemMessage?.content,
       model: options.model,
       maxOutputTokens: options.maxTokens,
+      tools: toApiTools(options.tools),
       provider: {
         sort: "price",
       },
@@ -81,6 +101,34 @@ export function chatStream(messages: Message[], options: ChatOptions) {
       instructions: systemMessage?.content,
       model: options.model,
       maxOutputTokens: options.maxTokens,
+      tools: toApiTools(options.tools),
+      provider: {
+        sort: "price",
+      },
+      stream: true,
+    },
+  });
+}
+
+/**
+ * Stream with raw input items — supports function_call and function_call_output
+ * entries needed for the agentic tool-calling loop.
+ */
+export function chatStreamWithInput(
+  input: Array<Record<string, unknown>>,
+  options: ChatOptions & { instructions?: string },
+) {
+  return openRouter.beta.responses.send({
+    openResponsesRequest: {
+      // Cast: input contains mixed message and function_call/function_call_output items
+      // that the SDK union type can't express from Record<string, unknown>
+      input: input as Parameters<
+        typeof openRouter.beta.responses.send
+      >[0]["openResponsesRequest"]["input"],
+      instructions: options.instructions,
+      model: options.model,
+      maxOutputTokens: options.maxTokens,
+      tools: toApiTools(options.tools),
       provider: {
         sort: "price",
       },

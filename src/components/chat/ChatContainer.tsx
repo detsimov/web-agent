@@ -12,6 +12,7 @@ import { ContextStateDialog } from "@/components/ui/ContextStateDialog";
 import { Header } from "@/components/ui/Header";
 import { SettingsDialog } from "@/components/ui/SettingsDialog";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
+import { WorkingMemoryWidget } from "@/components/ui/WorkingMemoryWidget";
 import { useChat } from "@/hooks/useChat";
 import { useModels } from "@/hooks/useModels";
 import { DEFAULT_INSTRUCTIONS } from "@/lib/agent/constants";
@@ -38,6 +39,9 @@ type ApiBranch = {
   summarizationEvery: number | null;
   summarizationRatio: number | null;
   summarizationKeep: number | null;
+  workingMemoryMode: string;
+  workingMemoryModel: string | null;
+  workingMemoryEvery: number;
   messages: Array<{
     id: number;
     role: string;
@@ -69,6 +73,9 @@ function makeDefaultBranch(branchId: number): ApiBranch {
     summarizationEvery: null,
     summarizationRatio: null,
     summarizationKeep: null,
+    workingMemoryMode: "off",
+    workingMemoryModel: null,
+    workingMemoryEvery: 1,
     messages: [],
     contextState: null,
   };
@@ -94,6 +101,12 @@ function ChatContainerInner() {
   const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   const [branches, setBranches] = useState<ApiBranch[]>([]);
+  const [factsExtractionModel, setFactsExtractionModel] = useState<
+    string | null
+  >(null);
+  const [factsExtractionRules, setFactsExtractionRules] = useState<
+    string | null
+  >(null);
 
   const selectedModelData = useMemo(
     () => models.find((m) => m.id === selectedModel),
@@ -120,6 +133,9 @@ function ChatContainerInner() {
         summarizationEvery: activeBranch.summarizationEvery,
         summarizationRatio: activeBranch.summarizationRatio,
         summarizationKeep: activeBranch.summarizationKeep,
+        workingMemoryMode: activeBranch.workingMemoryMode,
+        workingMemoryModel: activeBranch.workingMemoryModel,
+        workingMemoryEvery: activeBranch.workingMemoryEvery,
       }
     : null;
 
@@ -142,8 +158,10 @@ function ChatContainerInner() {
     messages,
     isLoading,
     error,
+    workingMemory,
+    setWorkingMemory,
     sendMessage,
-    abort,
+    abort: _abort,
     reset,
     loadMessages,
     removeMessage,
@@ -184,6 +202,8 @@ function ChatContainerInner() {
         const data = await res.json();
         const apiBranches: ApiBranch[] = data.chat.branches;
         setBranches(apiBranches);
+        setFactsExtractionModel(data.chat.factsExtractionModel ?? null);
+        setFactsExtractionRules(data.chat.factsExtractionRules ?? null);
 
         const mainBranch = apiBranches.find((b) => !b.parentBranchId);
         if (mainBranch) {
@@ -406,6 +426,25 @@ function ChatContainerInner() {
     [activeBranchId],
   );
 
+  const handleChatSettingsUpdate = useCallback(
+    async (patch: {
+      factsExtractionModel?: string | null;
+      factsExtractionRules?: string | null;
+    }) => {
+      if (!activeChatId) return;
+      if (patch.factsExtractionModel !== undefined)
+        setFactsExtractionModel(patch.factsExtractionModel);
+      if (patch.factsExtractionRules !== undefined)
+        setFactsExtractionRules(patch.factsExtractionRules);
+      await fetch(`/api/chats/${activeChatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    },
+    [activeChatId],
+  );
+
   const isMainBranch = activeBranch ? !activeBranch.parentBranchId : true;
 
   return (
@@ -444,6 +483,10 @@ function ChatContainerInner() {
           branchConfig={activeChatId ? branchConfig : null}
           onBranchSettingsUpdate={handleBranchSettingsUpdate}
           branchName={activeBranch?.name}
+          factsExtractionModel={factsExtractionModel}
+          factsExtractionRules={factsExtractionRules}
+          onChatSettingsUpdate={handleChatSettingsUpdate}
+          showUserProfile={!!activeChatId}
         />
         <ContextStateDialog
           open={contextStateOpen}
@@ -476,6 +519,11 @@ function ChatContainerInner() {
                 {error}
               </div>
             )}
+            <WorkingMemoryWidget
+              workingMemory={workingMemory}
+              branchId={activeBranchId}
+              onUpdate={setWorkingMemory}
+            />
             <ChatInput onSend={handleSend} disabled={isLoading} />
           </>
         ) : (

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BranchConfig } from "@/components/settings/BranchSettings";
 import { ContextTab } from "@/components/settings/ContextTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
+import { UserProfileTab } from "@/components/settings/UserProfileTab";
 import type { Model } from "@/lib/types";
 
 type Props = {
@@ -23,6 +24,14 @@ type Props = {
   branchConfig: BranchConfig | null;
   onBranchSettingsUpdate: (patch: Partial<BranchConfig>) => void;
   branchName?: string;
+  // User Profile tab
+  factsExtractionModel?: string | null;
+  factsExtractionRules?: string | null;
+  onChatSettingsUpdate?: (patch: {
+    factsExtractionModel?: string | null;
+    factsExtractionRules?: string | null;
+  }) => void;
+  showUserProfile?: boolean;
 };
 
 export function SettingsDialog({
@@ -40,9 +49,13 @@ export function SettingsDialog({
   branchConfig,
   onBranchSettingsUpdate,
   branchName,
+  factsExtractionModel,
+  factsExtractionRules,
+  onChatSettingsUpdate,
+  showUserProfile,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [tab, setTab] = useState<"general" | "context">("general");
+  const [tab, setTab] = useState<"general" | "context" | "profile">("general");
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -116,6 +129,19 @@ export function SettingsDialog({
           >
             Context
           </button>
+          {showUserProfile && (
+            <button
+              type="button"
+              onClick={() => setTab("profile")}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                tab === "profile"
+                  ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              User Profile
+            </button>
+          )}
         </div>
 
         {/* Tab content */}
@@ -146,6 +172,15 @@ export function SettingsDialog({
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               Select a chat to configure context settings.
             </p>
+          )}
+          {tab === "profile" && onChatSettingsUpdate && (
+            <UserProfileTab
+              models={models}
+              modelsLoading={modelsLoading}
+              factsExtractionModel={factsExtractionModel ?? null}
+              factsExtractionRules={factsExtractionRules ?? null}
+              onChatUpdate={onChatSettingsUpdate}
+            />
           )}
         </div>
       </div>
