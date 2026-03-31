@@ -20,6 +20,10 @@ const PatchSchema = z.object({
   workingMemoryMode: z.enum(["off", "tool", "auto"]).optional(),
   workingMemoryModel: z.string().nullable().optional(),
   workingMemoryEvery: z.number().int().positive().optional(),
+  communicationStyle: z
+    .enum(["normal", "teaching", "concise", "explanatory", "casual"])
+    .nullable()
+    .optional(),
 });
 
 export async function PATCH(

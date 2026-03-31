@@ -15,6 +15,17 @@ export const chatTable = sqliteTable("chat_table", {
     .$defaultFn(() => new Date()),
 });
 
+export const personalizationTable = sqliteTable("personalization", {
+  id: int().primaryKey(),
+  communicationStyle: text("communication_style").notNull().default("normal"),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const branchTable = sqliteTable("branch", {
   id: int().primaryKey({ autoIncrement: true }),
   chatId: int("chat_id")
@@ -37,6 +48,7 @@ export const branchTable = sqliteTable("branch", {
   workingMemoryMode: text("working_memory_mode").notNull().default("off"),
   workingMemoryModel: text("working_memory_model"),
   workingMemoryEvery: int("working_memory_every").notNull().default(1),
+  communicationStyle: text("communication_style"),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

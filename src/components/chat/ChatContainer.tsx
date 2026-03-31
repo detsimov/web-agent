@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BranchTab } from "@/components/chat/BranchTabs";
 import { BranchTabs } from "@/components/chat/BranchTabs";
 import type {
@@ -16,6 +16,7 @@ import { WorkingMemoryWidget } from "@/components/ui/WorkingMemoryWidget";
 import { useChat } from "@/hooks/useChat";
 import { useModels } from "@/hooks/useModels";
 import { DEFAULT_INSTRUCTIONS } from "@/lib/agent/constants";
+import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { ChatMessage } from "@/lib/types";
 import { ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
@@ -42,6 +43,7 @@ type ApiBranch = {
   workingMemoryMode: string;
   workingMemoryModel: string | null;
   workingMemoryEvery: number;
+  communicationStyle: string | null;
   messages: Array<{
     id: number;
     role: string;
@@ -76,6 +78,7 @@ function makeDefaultBranch(branchId: number): ApiBranch {
     workingMemoryMode: "off",
     workingMemoryModel: null,
     workingMemoryEvery: 1,
+    communicationStyle: null,
     messages: [],
     contextState: null,
   };
@@ -107,6 +110,16 @@ function ChatContainerInner() {
   const [factsExtractionRules, setFactsExtractionRules] = useState<
     string | null
   >(null);
+  const [globalStyle, setGlobalStyle] =
+    useState<CommunicationStyleKey>("normal");
+
+  useEffect(() => {
+    fetch("/api/personalization")
+      .then((r) => r.json())
+      .then((data) => {
+        setGlobalStyle(data.communicationStyle);
+      });
+  }, []);
 
   const selectedModelData = useMemo(
     () => models.find((m) => m.id === selectedModel),
@@ -445,6 +458,39 @@ function ChatContainerInner() {
     [activeChatId],
   );
 
+  const resolvedStyle = (activeBranch?.communicationStyle ??
+    globalStyle ??
+    "normal") as CommunicationStyleKey;
+
+  const handleStyleChange = useCallback(
+    async (style: CommunicationStyleKey | null) => {
+      if (!activeBranchId) return;
+      setBranches((prev) =>
+        prev.map((b) =>
+          b.id === activeBranchId ? { ...b, communicationStyle: style } : b,
+        ),
+      );
+      await fetch(`/api/branches/${activeBranchId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ communicationStyle: style }),
+      });
+    },
+    [activeBranchId],
+  );
+
+  const handleGlobalStyleChange = useCallback(
+    async (style: CommunicationStyleKey) => {
+      setGlobalStyle(style);
+      await fetch("/api/personalization", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ communicationStyle: style }),
+      });
+    },
+    [],
+  );
+
   const isMainBranch = activeBranch ? !activeBranch.parentBranchId : true;
 
   return (
@@ -487,6 +533,8 @@ function ChatContainerInner() {
           factsExtractionRules={factsExtractionRules}
           onChatSettingsUpdate={handleChatSettingsUpdate}
           showUserProfile={!!activeChatId}
+          communicationStyle={globalStyle}
+          onCommunicationStyleChange={handleGlobalStyleChange}
         />
         <ContextStateDialog
           open={contextStateOpen}
@@ -524,7 +572,13 @@ function ChatContainerInner() {
               branchId={activeBranchId}
               onUpdate={setWorkingMemory}
             />
-            <ChatInput onSend={handleSend} disabled={isLoading} />
+            <ChatInput
+              onSend={handleSend}
+              disabled={isLoading}
+              communicationStyle={resolvedStyle}
+              globalCommunicationStyle={globalStyle}
+              onStyleChange={handleStyleChange}
+            />
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

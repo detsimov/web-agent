@@ -1,4 +1,6 @@
 import { Agent, type ToolHandler } from "@/lib/agent/Agent";
+import type { CommunicationStyleKey } from "@/lib/communication-styles";
+import { COMMUNICATION_STYLES } from "@/lib/communication-styles";
 import {
   FACTS_EXTRACTION_PROMPT,
   SUMMARY_SYSTEM_PROMPT,
@@ -39,8 +41,15 @@ export class AgentPipeline {
     const lastUsage = await this.repo.getLastUsage(branchId);
     const workingMemory = await this.repo.loadWorkingMemory(branchId);
     const globalFacts = await this.repo.loadGlobalFacts();
+    const personalization = await this.repo.loadPersonalization();
 
-    const config = buildBranchConfig(branch, chat, lastUsage, overrides);
+    const config = buildBranchConfig(
+      branch,
+      chat,
+      lastUsage,
+      personalization,
+      overrides,
+    );
 
     // 2. Persist model choice if changed
     if (overrides?.model && overrides.model !== branch.model) {
@@ -74,6 +83,7 @@ export class AgentPipeline {
     // 6. Build final messages (with global facts, merged facts, working memory)
     const finalMessages = buildFinalMessages(
       chat.systemMessage,
+      config.communicationStyle,
       state.globalFacts,
       state.facts,
       state.context,
@@ -321,6 +331,7 @@ function buildBranchConfig(
     workingMemoryMode: string;
     workingMemoryModel: string | null;
     workingMemoryEvery: number;
+    communicationStyle: string | null;
   },
   chat: {
     maxTokens: number;
@@ -330,6 +341,7 @@ function buildBranchConfig(
     factsExtractionRules: string | null;
   },
   lastUsage: { totalTokens: number },
+  personalization: { communicationStyle: CommunicationStyleKey },
   overrides?: { model?: string; maxTokens?: number },
 ): BranchConfig {
   return {
@@ -353,6 +365,9 @@ function buildBranchConfig(
       branch.workingMemoryMode as BranchConfig["workingMemoryMode"],
     workingMemoryModel: branch.workingMemoryModel,
     workingMemoryEvery: branch.workingMemoryEvery,
+    communicationStyle: (branch.communicationStyle ??
+      personalization.communicationStyle ??
+      "normal") as CommunicationStyleKey,
     factsExtractionModel: chat.factsExtractionModel,
     factsExtractionRules: chat.factsExtractionRules ?? "",
     lastTotalTokens: lastUsage.totalTokens,
@@ -362,6 +377,7 @@ function buildBranchConfig(
 
 function buildFinalMessages(
   systemMessage: string,
+  communicationStyle: CommunicationStyleKey,
   globalFacts: Record<string, string>,
   localFacts: Record<string, string>,
   context: string,
@@ -371,6 +387,12 @@ function buildFinalMessages(
   newUserMessage: string,
 ): Message[] {
   let system = systemMessage;
+
+  // Communication style — injected early, before context
+  const stylePrompt = COMMUNICATION_STYLES[communicationStyle]?.prompt;
+  if (stylePrompt) {
+    system += `\n\n[COMMUNICATION STYLE]\n${stylePrompt}`;
+  }
 
   // Merge facts: global as base, local overrides (branch wins)
   const mergedFacts = { ...globalFacts, ...localFacts };

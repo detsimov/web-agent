@@ -1,3 +1,4 @@
+import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { TurnResult, WorkingMemory } from "@/lib/pipeline/types";
 import type { PersistedMessage } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export type BranchRow = {
   workingMemoryMode: string;
   workingMemoryModel: string | null;
   workingMemoryEvery: number;
+  communicationStyle: string | null;
   createdAt: Date;
 };
 
@@ -41,6 +43,10 @@ export type ContextState = {
   context: string;
   summarizedUpTo: number;
   factsExtractedUpTo: number;
+};
+
+export type Personalization = {
+  communicationStyle: CommunicationStyleKey;
 };
 
 export type CreateChatInput = {
@@ -124,4 +130,10 @@ export interface IChatRepository {
     branchId: number,
     facts: Record<string, string>,
   ): Promise<void>;
+
+  // --- Personalization (singleton) ---
+  loadPersonalization(): Promise<Personalization>;
+  updatePersonalization(
+    data: Partial<Personalization>,
+  ): Promise<Personalization>;
 }

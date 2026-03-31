@@ -1,3 +1,4 @@
+import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { PersistedMessage } from "@/lib/types";
 
 // --- Working Memory ---
@@ -64,6 +65,7 @@ export type BranchConfig = {
   workingMemoryEvery: number;
   factsExtractionModel: string | null;
   factsExtractionRules: string;
+  communicationStyle: CommunicationStyleKey;
   lastTotalTokens: number;
   maxTokens: number;
 };

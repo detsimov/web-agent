@@ -65,6 +65,7 @@ export async function GET(
         workingMemoryMode: branch.workingMemoryMode,
         workingMemoryModel: branch.workingMemoryModel,
         workingMemoryEvery: branch.workingMemoryEvery,
+        communicationStyle: branch.communicationStyle,
         createdAt: branch.createdAt,
         messages,
         contextState: contextState

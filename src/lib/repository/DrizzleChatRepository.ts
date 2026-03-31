@@ -8,7 +8,9 @@ import {
   globalFactsTable,
   messageTable,
   messageUsageTable,
+  personalizationTable,
 } from "@/db/schema";
+import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import { AppError } from "@/lib/error/AppError";
 import {
   EMPTY_WORKING_MEMORY,
@@ -23,6 +25,7 @@ import type {
   CreateBranchInput,
   CreateChatInput,
   IChatRepository,
+  Personalization,
 } from "./types";
 
 function toPersistedMessage(row: {
@@ -199,6 +202,7 @@ export class DrizzleChatRepository implements IChatRepository {
         workingMemoryMode: mainBranch.workingMemoryMode,
         workingMemoryModel: mainBranch.workingMemoryModel,
         workingMemoryEvery: mainBranch.workingMemoryEvery,
+        communicationStyle: mainBranch.communicationStyle,
       })
       .returning();
 
@@ -610,6 +614,35 @@ export class DrizzleChatRepository implements IChatRepository {
           updatedAt: new Date(),
         },
       });
+  }
+  // --- Personalization (singleton) ---
+
+  async loadPersonalization(): Promise<Personalization> {
+    await db
+      .insert(personalizationTable)
+      .values({ id: 1, communicationStyle: "normal" })
+      .onConflictDoNothing();
+
+    const rows = await db
+      .select()
+      .from(personalizationTable)
+      .where(eq(personalizationTable.id, 1));
+
+    return {
+      communicationStyle: (rows[0]?.communicationStyle ??
+        "normal") as CommunicationStyleKey,
+    };
+  }
+
+  async updatePersonalization(
+    data: Partial<Personalization>,
+  ): Promise<Personalization> {
+    await db
+      .update(personalizationTable)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(personalizationTable.id, 1));
+
+    return this.loadPersonalization();
   }
 }
 
