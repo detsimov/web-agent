@@ -34,7 +34,10 @@ export function MessageBubble({ message, onOpenMenu }: Props) {
       className={`group/msg flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: custom context menu on message bubble */}
-      <div className="relative max-w-[80%]" onContextMenu={handleContextMenu}>
+      <div
+        className="relative max-w-[80%] min-w-0"
+        onContextMenu={handleContextMenu}
+      >
         <div
           className={`rounded-2xl px-4 py-3 ${
             isUser
@@ -45,7 +48,7 @@ export function MessageBubble({ message, onOpenMenu }: Props) {
           {isUser ? (
             <p className="whitespace-pre-wrap text-sm">{message.content}</p>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
+            <div className="prose prose-sm dark:prose-invert max-w-none overflow-hidden">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}

@@ -1,15 +1,21 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import type { MachineStateData } from "@/hooks/useChat";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import { StylePicker } from "./StylePicker";
 
+export type SendOptions = {
+  planningMode?: boolean;
+};
+
 type Props = {
-  onSend: (message: string) => void;
+  onSend: (message: string, options?: SendOptions) => void;
   disabled: boolean;
   communicationStyle: CommunicationStyleKey;
   globalCommunicationStyle: CommunicationStyleKey;
   onStyleChange: (style: CommunicationStyleKey | null) => void;
+  machineState: MachineStateData | null;
 };
 
 export function ChatInput({
@@ -18,8 +24,10 @@ export function ChatInput({
   communicationStyle,
   globalCommunicationStyle,
   onStyleChange,
+  machineState,
 }: Props) {
   const [value, setValue] = useState("");
+  const [planningMode, setPlanningMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const resize = useCallback(() => {
@@ -32,8 +40,11 @@ export function ChatInput({
   function handleSubmit() {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed);
+
+    onSend(trimmed, planningMode ? { planningMode: true } : undefined);
+
     setValue("");
+    setPlanningMode(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -47,6 +58,7 @@ export function ChatInput({
   }
 
   const canSend = !disabled && !!value.trim();
+  const machineActive = machineState?.status === "active";
 
   return (
     <div className="px-4 pb-4 pt-2">
@@ -60,16 +72,51 @@ export function ChatInput({
           }}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Type a message..."
+          placeholder={
+            planningMode ? "Describe what to plan..." : "Type a message..."
+          }
           rows={1}
           className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm outline-none placeholder:text-zinc-400 disabled:opacity-50 dark:text-zinc-100 dark:placeholder:text-zinc-500"
         />
         <div className="flex items-center justify-between px-2 pb-2">
-          <StylePicker
-            value={communicationStyle}
-            globalDefault={globalCommunicationStyle}
-            onChange={onStyleChange}
-          />
+          <div className="flex items-center gap-1">
+            <StylePicker
+              value={communicationStyle}
+              globalDefault={globalCommunicationStyle}
+              onChange={onStyleChange}
+            />
+            {!machineActive && (
+              <button
+                type="button"
+                onClick={() => setPlanningMode((p) => !p)}
+                className={`flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
+                  planningMode
+                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                }`}
+                aria-label="Toggle planning mode"
+                title="Send with planning workflow"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                  <path d="M9 5a2 2 0 002 2h2a2 2 0 002-2" />
+                  <path d="M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                Plan
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleSubmit}

@@ -1,4 +1,5 @@
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
+import type { StateMachineInstance } from "@/lib/machine/types";
 import type { TurnResult, WorkingMemory } from "@/lib/pipeline/types";
 import type { PersistedMessage } from "@/lib/types";
 
@@ -130,6 +131,20 @@ export interface IChatRepository {
     branchId: number,
     facts: Record<string, string>,
   ): Promise<void>;
+
+  // --- Machine instances ---
+  loadMachineInstance(branchId: number): Promise<StateMachineInstance | null>;
+  createMachineInstance(
+    branchId: number,
+    definitionId: string,
+    initialState: string,
+    data: Record<string, unknown>,
+  ): Promise<StateMachineInstance>;
+  saveMachineInstance(instance: StateMachineInstance): Promise<void>;
+  stopMachineInstance(branchId: number): Promise<StateMachineInstance | null>;
+  loadLastCompletedInstance(
+    branchId: number,
+  ): Promise<StateMachineInstance | null>;
 
   // --- Personalization (singleton) ---
   loadPersonalization(): Promise<Personalization>;

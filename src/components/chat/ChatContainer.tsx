@@ -10,6 +10,7 @@ import type {
 import { ChatSidebar } from "@/components/sidebar/ChatSidebar";
 import { ContextStateDialog } from "@/components/ui/ContextStateDialog";
 import { Header } from "@/components/ui/Header";
+import { MachineStateWidget } from "@/components/ui/MachineStateWidget";
 import { SettingsDialog } from "@/components/ui/SettingsDialog";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { WorkingMemoryWidget } from "@/components/ui/WorkingMemoryWidget";
@@ -173,6 +174,8 @@ function ChatContainerInner() {
     error,
     workingMemory,
     setWorkingMemory,
+    machineState,
+    setMachineState,
     sendMessage,
     abort: _abort,
     reset,
@@ -332,8 +335,8 @@ function ChatContainerInner() {
   }, [activeChatId]);
 
   const handleSend = useCallback(
-    async (content: string) => {
-      await sendMessage(content);
+    async (content: string, options?: { planningMode?: boolean }) => {
+      await sendMessage(content, options);
       setSidebarRefresh((n) => n + 1);
       await refreshBranches();
     },
@@ -572,12 +575,18 @@ function ChatContainerInner() {
               branchId={activeBranchId}
               onUpdate={setWorkingMemory}
             />
+            <MachineStateWidget
+              machineState={machineState}
+              branchId={activeBranchId}
+              onStopped={() => setMachineState(null)}
+            />
             <ChatInput
               onSend={handleSend}
               disabled={isLoading}
               communicationStyle={resolvedStyle}
               globalCommunicationStyle={globalStyle}
               onStyleChange={handleStyleChange}
+              machineState={machineState}
             />
           </>
         ) : (

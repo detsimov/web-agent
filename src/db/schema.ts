@@ -123,6 +123,24 @@ export const branchContextStateTable = sqliteTable("branch_context_state", {
     .$defaultFn(() => new Date()),
 });
 
+export const machineInstancesTable = sqliteTable("machine_instances", {
+  id: int().primaryKey({ autoIncrement: true }),
+  branchId: int("branch_id")
+    .notNull()
+    .references(() => branchTable.id, { onDelete: "cascade" }),
+  definitionId: text("definition_id").notNull(),
+  currentState: text("current_state").notNull(),
+  status: text().notNull(), // "active" | "completed" | "stopped"
+  data: text().notNull(), // JSON string
+  history: text().notNull(), // JSON string
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const chatRelations = relations(chatTable, ({ many }) => ({
   branches: many(branchTable),
 }));
@@ -146,6 +164,7 @@ export const branchRelations = relations(branchTable, ({ one, many }) => ({
     fields: [branchTable.id],
     references: [branchWorkingMemoryTable.branchId],
   }),
+  machineInstances: many(machineInstancesTable),
 }));
 
 export const branchWorkingMemoryRelations = relations(
@@ -163,6 +182,16 @@ export const branchContextStateRelations = relations(
   ({ one }) => ({
     branch: one(branchTable, {
       fields: [branchContextStateTable.branchId],
+      references: [branchTable.id],
+    }),
+  }),
+);
+
+export const machineInstancesRelations = relations(
+  machineInstancesTable,
+  ({ one }) => ({
+    branch: one(branchTable, {
+      fields: [machineInstancesTable.branchId],
       references: [branchTable.id],
     }),
   }),

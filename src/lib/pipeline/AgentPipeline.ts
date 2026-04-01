@@ -1,10 +1,26 @@
-import { Agent, type ToolHandler } from "@/lib/agent/Agent";
+import {
+  Agent,
+  type ToolHandler,
+  type ToolHandlerResult,
+} from "@/lib/agent/Agent";
+import type { ToolDefinition } from "@/lib/agent/types";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import { COMMUNICATION_STYLES } from "@/lib/communication-styles";
 import {
   FACTS_EXTRACTION_PROMPT,
   SUMMARY_SYSTEM_PROMPT,
 } from "@/lib/context/constants";
+import "@/lib/machine/definitions"; // register definitions at import time
+import {
+  buildInactivePromptSection,
+  buildPromptSection,
+  resolveTools,
+  updateStateData,
+  validateTransition,
+} from "@/lib/machine/engine";
+import { getMachine, listMachines } from "@/lib/machine/registry";
+import { MACHINE_TOOL_NAMES } from "@/lib/machine/tools";
+import type { StateMachineInstance } from "@/lib/machine/types";
 import { UnifiedFactsExtractor } from "@/lib/pipeline/facts/UnifiedFactsExtractor";
 import { WORKING_MEMORY_TOOL } from "@/lib/pipeline/memory/tool";
 import { validateWorkingMemoryUpdate } from "@/lib/pipeline/memory/validation";
@@ -31,7 +47,7 @@ export class AgentPipeline {
   async *send(
     branchId: number,
     content: string,
-    overrides?: { model?: string; maxTokens?: number },
+    overrides?: { model?: string; maxTokens?: number; planningMode?: boolean },
   ): AsyncGenerator<StreamChunk> {
     // 1. Prepare
     const branch = await this.repo.getBranch(branchId);
@@ -70,6 +86,23 @@ export class AgentPipeline {
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0 },
     };
 
+    // 3.5. Load machine instance for branch
+    let machineInstance = await this.repo.loadMachineInstance(branchId);
+
+    // 3.6. Auto-start planning machine when planningMode flag is set
+    if (overrides?.planningMode && !machineInstance) {
+      const definition = getMachine("planning");
+      if (definition) {
+        machineInstance = await this.repo.createMachineInstance(
+          branchId,
+          "planning",
+          definition.initial,
+          { goal: content },
+        );
+        yield { type: "machine_state", data: machineInstance };
+      }
+    }
+
     // 4. Create and run strategies (summarization + sticky facts)
     const strategies = this.createStrategies(config);
     state = await this.runStrategies(strategies, state, config);
@@ -80,7 +113,17 @@ export class AgentPipeline {
       messagesToSend = allMessages.slice(-config.slidingWindowSize);
     }
 
-    // 6. Build final messages (with global facts, merged facts, working memory)
+    // 6. Build final messages (with global facts, merged facts, working memory, machine section)
+    let machineSection: string | undefined;
+    if (machineInstance) {
+      const definition = getMachine(machineInstance.definitionId);
+      if (definition) {
+        machineSection = buildPromptSection(definition, machineInstance);
+      }
+    } else {
+      machineSection = buildInactivePromptSection();
+    }
+
     const finalMessages = buildFinalMessages(
       chat.systemMessage,
       config.communicationStyle,
@@ -91,15 +134,22 @@ export class AgentPipeline {
       config.workingMemoryMode,
       messagesToSend,
       content,
+      machineSection,
     );
 
-    // 7. Create main agent (with tools if tool mode)
+    // 7. Create main agent (with tools if tool mode, with machine tool gating)
     let updatedWorkingMemory: WorkingMemory | null = null;
+
     const mainAgent = this.createMainAgent(
       config,
       state.workingMemory,
       (wm) => {
         updatedWorkingMemory = wm;
+      },
+      branchId,
+      machineInstance,
+      (instance) => {
+        machineInstance = instance;
       },
     );
 
@@ -138,6 +188,11 @@ export class AgentPipeline {
         : null,
       workingMemory: updatedWorkingMemory,
     });
+
+    // 9.5. Persist updated machine instance after turn commit
+    if (machineInstance) {
+      await this.repo.saveMachineInstance(machineInstance);
+    }
 
     // 10. Working memory extraction (sync, if auto mode)
     if (config.workingMemoryMode === "auto") {
@@ -271,37 +326,94 @@ export class AgentPipeline {
     config: BranchConfig,
     currentWorkingMemory: WorkingMemory,
     onWorkingMemoryUpdate: (wm: WorkingMemory) => void,
+    branchId: number,
+    machineInstance: StateMachineInstance | null,
+    onMachineUpdate: (instance: StateMachineInstance) => void,
   ): Agent {
+    // Collect base tools
+    const baseTools: ToolDefinition[] = [];
     if (config.workingMemoryMode === "tool") {
-      let latestMemory = currentWorkingMemory;
+      baseTools.push(WORKING_MEMORY_TOOL);
+    }
 
-      const toolHandler: ToolHandler = async (call) => {
-        if (call.function.name === "update_working_memory") {
-          try {
-            const args = JSON.parse(call.function.arguments);
-            const incoming: WorkingMemory = {
-              summary: args.summary ?? "",
-              detail: args.detail ?? "",
-              steps: Array.isArray(args.steps) ? args.steps : [],
-              history: Array.isArray(args.history) ? args.history : [],
-            };
-            latestMemory = validateWorkingMemoryUpdate(latestMemory, incoming);
-            onWorkingMemoryUpdate(latestMemory);
-            return latestMemory;
-          } catch (error) {
-            console.warn("Failed to parse working memory tool args:", error);
-            return { error: "Invalid arguments" };
-          }
+    // Resolve tools with machine gating
+    const definition = machineInstance
+      ? getMachine(machineInstance.definitionId)
+      : null;
+    const resolvedTools = definition
+      ? resolveTools(definition, machineInstance, baseTools)
+      : resolveTools(
+          // When no definition, pass a dummy — resolveTools handles null instance
+          null as unknown as import("@/lib/machine/types").StateMachineDefinition,
+          machineInstance,
+          baseTools,
+        );
+
+    // Build combined tool handler
+    let latestMemory = currentWorkingMemory;
+    let latestMachineInstance = machineInstance;
+
+    const toolHandler: ToolHandler = async (
+      call,
+    ): Promise<ToolHandlerResult> => {
+      // Handle working memory tool
+      if (call.function.name === "update_working_memory") {
+        try {
+          const args = JSON.parse(call.function.arguments);
+          const incoming: WorkingMemory = {
+            summary: args.summary ?? "",
+            detail: args.detail ?? "",
+            steps: Array.isArray(args.steps) ? args.steps : [],
+            history: Array.isArray(args.history) ? args.history : [],
+          };
+          latestMemory = validateWorkingMemoryUpdate(latestMemory, incoming);
+          onWorkingMemoryUpdate(latestMemory);
+          return {
+            output: latestMemory,
+            streamChunks: [{ type: "working_memory", data: latestMemory }],
+          };
+        } catch (error) {
+          console.warn("Failed to parse working memory tool args:", error);
+          return { output: { error: "Invalid arguments" } };
         }
-        return { error: `Unknown tool: ${call.function.name}` };
-      };
+      }
 
+      // Handle machine tools
+      if (MACHINE_TOOL_NAMES.has(call.function.name)) {
+        const result = await this.handleMachineTool(
+          call.function.name,
+          call.function.arguments,
+          branchId,
+          latestMachineInstance,
+          (instance) => {
+            latestMachineInstance = instance;
+            onMachineUpdate(instance);
+          },
+        );
+
+        // Emit machine_state chunk inline for state-changing tools
+        const streamChunks: StreamChunk[] = [];
+        if (latestMachineInstance) {
+          streamChunks.push({
+            type: "machine_state",
+            data: latestMachineInstance,
+          });
+        }
+        return { output: result, streamChunks };
+      }
+
+      return { output: { error: `Unknown tool: ${call.function.name}` } };
+    };
+
+    const hasTools = resolvedTools.length > 0;
+
+    if (hasTools) {
       return new Agent(
         {
           model: this.agent.config.model,
           maxTokens: config.maxTokens,
           instructions: "",
-          tools: [WORKING_MEMORY_TOOL],
+          tools: resolvedTools,
         },
         toolHandler,
       );
@@ -312,6 +424,172 @@ export class AgentPipeline {
       maxTokens: config.maxTokens,
       instructions: "",
     });
+  }
+
+  private async handleMachineTool(
+    name: string,
+    argsJson: string,
+    branchId: number,
+    currentInstance: StateMachineInstance | null,
+    onUpdate: (instance: StateMachineInstance) => void,
+  ): Promise<unknown> {
+    try {
+      const args = JSON.parse(argsJson);
+
+      switch (name) {
+        case "start_machine": {
+          if (currentInstance && currentInstance.status === "active") {
+            const def = getMachine(currentInstance.definitionId);
+            return {
+              error: `A machine is already active on this branch. Current: ${def?.name ?? currentInstance.definitionId} (${currentInstance.current} state)`,
+            };
+          }
+
+          const defId = args.definitionId as string;
+          const definition = getMachine(defId);
+          if (!definition) {
+            const available = listMachines()
+              .map((m) => m.id)
+              .join(", ");
+            return {
+              error: `Unknown machine definition: ${defId}. Available: ${available}`,
+            };
+          }
+
+          const instance = await this.repo.createMachineInstance(
+            branchId,
+            defId,
+            definition.initial,
+            (args.data as Record<string, unknown>) ?? {},
+          );
+          onUpdate(instance);
+          return instance;
+        }
+
+        case "transition_state": {
+          if (!currentInstance || currentInstance.status !== "active") {
+            return { error: "No active machine on this branch" };
+          }
+
+          const definition = getMachine(currentInstance.definitionId);
+          if (!definition) {
+            return { error: "Machine definition not found" };
+          }
+
+          // Merge optional data before validating transition
+          if (args.data && typeof args.data === "object") {
+            currentInstance = updateStateData(
+              currentInstance,
+              args.data as Record<string, unknown>,
+            );
+          }
+
+          const result = validateTransition(
+            definition,
+            currentInstance,
+            args.to as string,
+            args.reason as string,
+          );
+
+          if (!result.ok) {
+            return { error: result.error };
+          }
+
+          const updated: StateMachineInstance = {
+            ...currentInstance,
+            current: args.to as string,
+            history: [...currentInstance.history, result.record],
+            updatedAt: new Date(),
+          };
+
+          // Check if transitioning to a final state
+          if (definition.final.includes(args.to as string)) {
+            updated.status = "completed";
+          }
+
+          onUpdate(updated);
+
+          // Return new state instructions so LLM switches behavior mid-turn
+          const newState = definition.states[args.to as string];
+          return {
+            transitioned: true,
+            from: result.record.from,
+            to: args.to,
+            status: updated.status,
+            data: updated.data,
+            instructions: newState?.instructions ?? null,
+          };
+        }
+
+        case "update_state_data": {
+          if (!currentInstance || currentInstance.status !== "active") {
+            return { error: "No active machine on this branch" };
+          }
+
+          const updated = updateStateData(
+            currentInstance,
+            args.data as Record<string, unknown>,
+          );
+          onUpdate(updated);
+          return updated;
+        }
+
+        case "get_state": {
+          const inst = currentInstance;
+          if (inst && inst.status === "active") {
+            const definition = getMachine(inst.definitionId);
+            const availableTransitions = definition
+              ? definition.transitions
+                  .filter((t) => t.from === inst.current)
+                  .map((t) => ({
+                    to: t.to,
+                    condition: t.condition,
+                  }))
+              : [];
+
+            return {
+              definitionId: inst.definitionId,
+              definitionName: definition?.name,
+              current: inst.current,
+              status: inst.status,
+              data: inst.data,
+              history: inst.history,
+              availableTransitions,
+            };
+          }
+
+          // No active machine — check for last completed
+          const lastCompleted =
+            await this.repo.loadLastCompletedInstance(branchId);
+          const available = listMachines();
+
+          if (lastCompleted) {
+            return {
+              active: false,
+              lastCompleted: {
+                definitionId: lastCompleted.definitionId,
+                current: lastCompleted.current,
+                data: lastCompleted.data,
+              },
+              availableMachines: available.map((m) => m.id),
+            };
+          }
+
+          return {
+            active: false,
+            availableMachines: available.map((m) => m.id),
+          };
+        }
+
+        default:
+          return { error: `Unknown machine tool: ${name}` };
+      }
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error ? error.message : "Machine tool call failed",
+      };
+    }
   }
 }
 
@@ -385,6 +663,7 @@ function buildFinalMessages(
   workingMemoryMode: BranchConfig["workingMemoryMode"],
   messages: import("@/lib/types").PersistedMessage[],
   newUserMessage: string,
+  machineSection?: string,
 ): Message[] {
   let system = systemMessage;
 
@@ -418,6 +697,11 @@ function buildFinalMessages(
     system += `\n\n[WORKING MEMORY]\n${memoryJson}\n\nIMPORTANT: You MUST call update_working_memory at the end of every response. Update step statuses to reflect completed work. If you don't call it, your progress will be lost.`;
   } else if (hasWorkingMemory) {
     system += `\n\n[WORKING MEMORY]\n${JSON.stringify(workingMemory)}`;
+  }
+
+  // Machine section — injected after working memory
+  if (machineSection) {
+    system += `\n\n${machineSection}`;
   }
 
   return [

@@ -10,6 +10,21 @@ export type WorkingMemoryData = {
   history: string[];
 };
 
+export type MachineStateData = {
+  id: number;
+  branchId: number;
+  definitionId: string;
+  current: string;
+  status: "active" | "completed" | "stopped";
+  data: Record<string, unknown>;
+  history: Array<{
+    from: string;
+    to: string;
+    reason: string;
+    timestamp: string;
+  }>;
+};
+
 type UseChatOptions = {
   model?: string;
   maxTokens?: number;
@@ -25,6 +40,9 @@ export function useChat(options: UseChatOptions = {}) {
   const [workingMemory, setWorkingMemory] = useState<WorkingMemoryData | null>(
     null,
   );
+  const [machineState, setMachineState] = useState<MachineStateData | null>(
+    null,
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   const abort = useCallback(() => {
@@ -35,14 +53,17 @@ export function useChat(options: UseChatOptions = {}) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, sendOptions?: { planningMode?: boolean }) => {
       // Cancel any in-flight request
       abort();
 
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const userMessage: ChatMessage = { role: "user", content };
+      const userMessage: ChatMessage = {
+        role: "user",
+        content,
+      };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
       setError(null);
@@ -60,6 +81,10 @@ export function useChat(options: UseChatOptions = {}) {
           model: options.model,
           maxTokens: options.maxTokens,
         };
+
+        if (sendOptions?.planningMode) {
+          payload.planningMode = true;
+        }
 
         if (options.branchId) {
           payload.branchId = options.branchId;
@@ -88,6 +113,7 @@ export function useChat(options: UseChatOptions = {}) {
             res,
             setMessages,
             setWorkingMemory,
+            setMachineState,
             controller.signal,
           );
         } else {
@@ -127,6 +153,7 @@ export function useChat(options: UseChatOptions = {}) {
     setError(null);
     setIsLoading(false);
     setWorkingMemory(null);
+    setMachineState(null);
   }, [abort]);
 
   const loadMessages = useCallback(
@@ -157,6 +184,8 @@ export function useChat(options: UseChatOptions = {}) {
     error,
     workingMemory,
     setWorkingMemory,
+    machineState,
+    setMachineState,
     sendMessage,
     abort,
     reset,
@@ -171,6 +200,9 @@ async function handleStreamingResponse(
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setWorkingMemory: React.Dispatch<
     React.SetStateAction<WorkingMemoryData | null>
+  >,
+  setMachineState: React.Dispatch<
+    React.SetStateAction<MachineStateData | null>
   >,
   signal: AbortSignal,
 ) {
@@ -202,7 +234,8 @@ async function handleStreamingResponse(
               usage: ChatMessage["usage"];
             }
           | { type: "error"; error: string }
-          | { type: "working_memory"; data: WorkingMemoryData };
+          | { type: "working_memory"; data: WorkingMemoryData }
+          | { type: "machine_state"; data: MachineStateData };
 
         if (chunk.type === "delta") {
           if (!assistantAdded) {
@@ -251,6 +284,10 @@ async function handleStreamingResponse(
 
         if (chunk.type === "working_memory") {
           setWorkingMemory(chunk.data);
+        }
+
+        if (chunk.type === "machine_state") {
+          setMachineState(chunk.data);
         }
       }
     }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   branchContextStateTable,
@@ -6,12 +6,14 @@ import {
   branchWorkingMemoryTable,
   chatTable,
   globalFactsTable,
+  machineInstancesTable,
   messageTable,
   messageUsageTable,
   personalizationTable,
 } from "@/db/schema";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import { AppError } from "@/lib/error/AppError";
+import type { StateMachineInstance } from "@/lib/machine/types";
 import {
   EMPTY_WORKING_MEMORY,
   type TurnResult,
@@ -615,6 +617,124 @@ export class DrizzleChatRepository implements IChatRepository {
         },
       });
   }
+  // --- Machine instances ---
+
+  private toMachineInstance(row: {
+    id: number;
+    branchId: number;
+    definitionId: string;
+    currentState: string;
+    status: string;
+    data: string;
+    history: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): StateMachineInstance {
+    return {
+      id: row.id,
+      branchId: row.branchId,
+      definitionId: row.definitionId,
+      current: row.currentState,
+      status: row.status as StateMachineInstance["status"],
+      data: JSON.parse(row.data) as Record<string, unknown>,
+      history: JSON.parse(row.history) as StateMachineInstance["history"],
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async loadMachineInstance(
+    branchId: number,
+  ): Promise<StateMachineInstance | null> {
+    const row = await db.query.machineInstancesTable.findFirst({
+      where: and(
+        eq(machineInstancesTable.branchId, branchId),
+        eq(machineInstancesTable.status, "active"),
+      ),
+    });
+    if (!row) return null;
+    return this.toMachineInstance(row);
+  }
+
+  async createMachineInstance(
+    branchId: number,
+    definitionId: string,
+    initialState: string,
+    data: Record<string, unknown>,
+  ): Promise<StateMachineInstance> {
+    // Enforce one active instance per branch
+    const existing = await this.loadMachineInstance(branchId);
+    if (existing) {
+      throw new AppError(
+        "A machine is already active on this branch",
+        409,
+        "MACHINE_ALREADY_ACTIVE",
+      );
+    }
+
+    const [row] = await db
+      .insert(machineInstancesTable)
+      .values({
+        branchId,
+        definitionId,
+        currentState: initialState,
+        status: "active",
+        data: JSON.stringify(data),
+        history: JSON.stringify([]),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return this.toMachineInstance(row);
+  }
+
+  async saveMachineInstance(instance: StateMachineInstance): Promise<void> {
+    await db
+      .update(machineInstancesTable)
+      .set({
+        currentState: instance.current,
+        status: instance.status,
+        data: JSON.stringify(instance.data),
+        history: JSON.stringify(instance.history),
+        updatedAt: new Date(),
+      })
+      .where(eq(machineInstancesTable.id, instance.id));
+  }
+
+  async stopMachineInstance(
+    branchId: number,
+  ): Promise<StateMachineInstance | null> {
+    const instance = await this.loadMachineInstance(branchId);
+    if (!instance) return null;
+
+    const [row] = await db
+      .update(machineInstancesTable)
+      .set({ status: "stopped", updatedAt: new Date() })
+      .where(eq(machineInstancesTable.id, instance.id))
+      .returning();
+
+    return this.toMachineInstance(row);
+  }
+
+  async loadLastCompletedInstance(
+    branchId: number,
+  ): Promise<StateMachineInstance | null> {
+    const rows = await db
+      .select()
+      .from(machineInstancesTable)
+      .where(
+        and(
+          eq(machineInstancesTable.branchId, branchId),
+          ne(machineInstancesTable.status, "active"),
+        ),
+      )
+      .orderBy(desc(machineInstancesTable.updatedAt))
+      .limit(1);
+
+    if (rows.length === 0) return null;
+    return this.toMachineInstance(rows[0]);
+  }
+
   // --- Personalization (singleton) ---
 
   async loadPersonalization(): Promise<Personalization> {

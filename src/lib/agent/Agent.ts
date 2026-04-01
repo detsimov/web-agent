@@ -16,7 +16,12 @@ const MAX_RETRIES = 3;
 const MAX_TOOL_ITERATIONS = 10;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
-export type ToolHandler = (call: ToolCall) => Promise<unknown>;
+export type ToolHandlerResult = {
+  output: unknown;
+  streamChunks?: StreamChunk[];
+};
+
+export type ToolHandler = (call: ToolCall) => Promise<ToolHandlerResult>;
 
 export class Agent {
   readonly config: AgentConfig;
@@ -205,15 +210,23 @@ export class Agent {
           },
         };
 
-        let result: unknown;
+        let handlerResult: ToolHandlerResult;
         try {
-          result = await this.toolHandler?.(toolCall);
+          handlerResult = (await this.toolHandler?.(toolCall)) ?? {
+            output: null,
+          };
         } catch (error) {
-          result = {
-            error:
-              error instanceof Error ? error.message : "Tool execution failed",
+          handlerResult = {
+            output: {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Tool execution failed",
+            },
           };
         }
+
+        const output = handlerResult.output;
 
         // Append raw function_call + function_call_output items
         // chatStreamWithInput passes these directly to the API
@@ -226,20 +239,14 @@ export class Agent {
         input.push({
           type: "function_call_output",
           callId: fc.callId,
-          output: typeof result === "string" ? result : JSON.stringify(result),
+          output: typeof output === "string" ? output : JSON.stringify(output),
         });
 
-        // Yield special stream chunks for specific tools
-        if (
-          fc.name === "update_working_memory" &&
-          result &&
-          typeof result === "object" &&
-          "summary" in (result as Record<string, unknown>)
-        ) {
-          yield {
-            type: "working_memory",
-            data: result as import("@/lib/pipeline/types").WorkingMemory,
-          };
+        // Yield any side-effect stream chunks from the tool handler
+        if (handlerResult.streamChunks) {
+          for (const chunk of handlerResult.streamChunks) {
+            yield chunk;
+          }
         }
       }
     }

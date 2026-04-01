@@ -10,6 +10,7 @@ const ChatRequestSchema = z.object({
   instructions: z.string().max(4000).optional(),
   chatId: z.number().int().positive().optional(),
   branchId: z.number().int().positive().optional(),
+  planningMode: z.boolean().optional(),
   messages: z.array(
     z.object({
       role: z.enum(["user", "assistant"]),
@@ -21,8 +22,15 @@ const ChatRequestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { model, maxTokens, instructions, chatId, branchId, messages } =
-      ChatRequestSchema.parse(body);
+    const {
+      model,
+      maxTokens,
+      instructions,
+      chatId,
+      branchId,
+      planningMode,
+      messages,
+    } = ChatRequestSchema.parse(body);
 
     // Streaming pipeline path (branchId or chatId)
     let targetBranchId: number | undefined;
@@ -41,6 +49,7 @@ export async function POST(request: Request) {
       const stream = pipeline.send(targetBranchId, lastMessage.content, {
         model,
         maxTokens,
+        planningMode,
       });
 
       const encoder = new TextEncoder();

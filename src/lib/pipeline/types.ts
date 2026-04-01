@@ -1,4 +1,5 @@
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
+import type { StateMachineInstance } from "@/lib/machine/types";
 import type { PersistedMessage } from "@/lib/types";
 
 // --- Working Memory ---
@@ -94,7 +95,8 @@ export type StreamChunk =
   | { type: "delta"; content: string }
   | { type: "done"; content: string; usage: UsageAccumulator | null }
   | { type: "error"; error: string }
-  | { type: "working_memory"; data: WorkingMemory };
+  | { type: "working_memory"; data: WorkingMemory }
+  | { type: "machine_state"; data: StateMachineInstance };
 
 export interface ContextStrategy {
   run(

@@ -58,6 +58,22 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Code blocks: prevent layout overflow */
+.prose pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.prose code {
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+.prose pre code {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 /* Highlight.js dark-mode overrides */
 .dark .hljs {
   background: #161b22;
