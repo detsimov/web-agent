@@ -141,6 +141,24 @@ export const machineInstancesTable = sqliteTable("machine_instances", {
     .$defaultFn(() => new Date()),
 });
 
+export const invariantTable = sqliteTable("invariant", {
+  id: text().primaryKey(),
+  name: text().notNull().unique(),
+  description: text().notNull(),
+  type: text().notNull(), // "regex" | "keyword"
+  pattern: text().notNull(),
+  caseSensitive: int("case_sensitive").notNull().default(0),
+  severity: text().notNull(), // "block" | "warn"
+  promptHint: text("prompt_hint").notNull(),
+  enabled: int().notNull().default(1),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const chatRelations = relations(chatTable, ({ many }) => ({
   branches: many(branchTable),
 }));

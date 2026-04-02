@@ -21,6 +21,8 @@ export type ChatMessage = Message & {
     totalTokens: number;
     cost: number | null;
   } | null;
+  invariantViolation?: string;
+  invariantWarnings?: string[];
 };
 
 export type PersistedMessage = {

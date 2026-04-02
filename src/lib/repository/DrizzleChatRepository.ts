@@ -6,6 +6,7 @@ import {
   branchWorkingMemoryTable,
   chatTable,
   globalFactsTable,
+  invariantTable,
   machineInstancesTable,
   messageTable,
   messageUsageTable,
@@ -27,6 +28,7 @@ import type {
   CreateBranchInput,
   CreateChatInput,
   IChatRepository,
+  Invariant,
   Personalization,
 } from "./types";
 
@@ -763,6 +765,100 @@ export class DrizzleChatRepository implements IChatRepository {
       .where(eq(personalizationTable.id, 1));
 
     return this.loadPersonalization();
+  }
+
+  // --- Invariants ---
+
+  private toInvariant(row: typeof invariantTable.$inferSelect): Invariant {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      type: (row.type === "" ? null : row.type) as Invariant["type"],
+      pattern: row.pattern,
+      caseSensitive: row.caseSensitive === 1,
+      severity: row.severity as Invariant["severity"],
+      promptHint: row.promptHint,
+      enabled: row.enabled === 1,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async loadInvariants(filter?: { enabled: boolean }): Promise<Invariant[]> {
+    const rows = filter?.enabled
+      ? await db
+          .select()
+          .from(invariantTable)
+          .where(eq(invariantTable.enabled, 1))
+          .orderBy(asc(invariantTable.createdAt))
+      : await db
+          .select()
+          .from(invariantTable)
+          .orderBy(asc(invariantTable.createdAt));
+
+    return rows.map((r) => this.toInvariant(r));
+  }
+
+  async createInvariant(
+    data: Omit<Invariant, "id" | "createdAt" | "updatedAt">,
+  ): Promise<Invariant> {
+    const id = crypto.randomUUID();
+    const [row] = await db
+      .insert(invariantTable)
+      .values({
+        id,
+        name: data.name,
+        description: data.description,
+        type: data.type ?? "",
+        pattern: data.pattern,
+        caseSensitive: data.caseSensitive ? 1 : 0,
+        severity: data.severity,
+        promptHint: data.promptHint,
+        enabled: data.enabled ? 1 : 0,
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return this.toInvariant(row);
+  }
+
+  async updateInvariant(
+    id: string,
+    data: Partial<Omit<Invariant, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<Invariant> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (data.name !== undefined) set.name = data.name;
+    if (data.description !== undefined) set.description = data.description;
+    if (data.type !== undefined) set.type = data.type ?? "";
+    if (data.pattern !== undefined) set.pattern = data.pattern;
+    if (data.caseSensitive !== undefined)
+      set.caseSensitive = data.caseSensitive ? 1 : 0;
+    if (data.severity !== undefined) set.severity = data.severity;
+    if (data.promptHint !== undefined) set.promptHint = data.promptHint;
+    if (data.enabled !== undefined) set.enabled = data.enabled ? 1 : 0;
+
+    const [row] = await db
+      .update(invariantTable)
+      .set(set)
+      .where(eq(invariantTable.id, id))
+      .returning();
+
+    if (!row) {
+      throw new AppError("Invariant not found", 404, "INVARIANT_NOT_FOUND");
+    }
+    return this.toInvariant(row);
+  }
+
+  async deleteInvariant(id: string): Promise<void> {
+    const [deleted] = await db
+      .delete(invariantTable)
+      .where(eq(invariantTable.id, id))
+      .returning();
+
+    if (!deleted) {
+      throw new AppError("Invariant not found", 404, "INVARIANT_NOT_FOUND");
+    }
   }
 }
 

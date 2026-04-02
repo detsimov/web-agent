@@ -96,7 +96,9 @@ export type StreamChunk =
   | { type: "done"; content: string; usage: UsageAccumulator | null }
   | { type: "error"; error: string }
   | { type: "working_memory"; data: WorkingMemory }
-  | { type: "machine_state"; data: StateMachineInstance };
+  | { type: "machine_state"; data: StateMachineInstance }
+  | { type: "invariant-violation"; name: string; description: string }
+  | { type: "invariant-warning"; name: string; description: string };
 
 export interface ContextStrategy {
   run(

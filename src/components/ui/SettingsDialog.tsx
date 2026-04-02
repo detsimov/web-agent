@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type { BranchConfig } from "@/components/settings/BranchSettings";
 import { ContextTab } from "@/components/settings/ContextTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
+import { InvariantsTab } from "@/components/settings/InvariantsTab";
 import { UserProfileTab } from "@/components/settings/UserProfileTab";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { Model } from "@/lib/types";
 
-type TabKey = "general" | "context" | "profile";
+type TabKey = "general" | "context" | "profile" | "invariants";
 
 type TabDef = {
   key: TabKey;
@@ -99,6 +100,22 @@ const ICON_PROFILE = (
   </svg>
 );
 
+const ICON_INVARIANTS = (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
+
 export function SettingsDialog({
   open,
   onClose,
@@ -146,6 +163,7 @@ export function SettingsDialog({
       icon: ICON_PROFILE,
       hidden: !showUserProfile,
     },
+    { key: "invariants", label: "Invariants", icon: ICON_INVARIANTS },
   ];
 
   const visibleTabs = tabs.filter((t) => !t.hidden);
@@ -254,6 +272,7 @@ export function SettingsDialog({
                 onChatUpdate={onChatSettingsUpdate}
               />
             )}
+            {tab === "invariants" && <InvariantsTab />}
           </div>
         </div>
       </div>

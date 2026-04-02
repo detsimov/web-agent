@@ -50,6 +50,20 @@ export type Personalization = {
   communicationStyle: CommunicationStyleKey;
 };
 
+export type Invariant = {
+  id: string;
+  name: string;
+  description: string;
+  type: "regex" | "keyword" | null;
+  pattern: string;
+  caseSensitive: boolean;
+  severity: "block" | "warn";
+  promptHint: string;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type CreateChatInput = {
   name: string;
   maxTokens?: number;
@@ -151,4 +165,15 @@ export interface IChatRepository {
   updatePersonalization(
     data: Partial<Personalization>,
   ): Promise<Personalization>;
+
+  // --- Invariants ---
+  loadInvariants(filter?: { enabled: boolean }): Promise<Invariant[]>;
+  createInvariant(
+    data: Omit<Invariant, "id" | "createdAt" | "updatedAt">,
+  ): Promise<Invariant>;
+  updateInvariant(
+    id: string,
+    data: Partial<Omit<Invariant, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<Invariant>;
+  deleteInvariant(id: string): Promise<void>;
 }

@@ -235,7 +235,9 @@ async function handleStreamingResponse(
             }
           | { type: "error"; error: string }
           | { type: "working_memory"; data: WorkingMemoryData }
-          | { type: "machine_state"; data: MachineStateData };
+          | { type: "machine_state"; data: MachineStateData }
+          | { type: "invariant-violation"; name: string; description: string }
+          | { type: "invariant-warning"; name: string; description: string };
 
         if (chunk.type === "delta") {
           if (!assistantAdded) {
@@ -288,6 +290,42 @@ async function handleStreamingResponse(
 
         if (chunk.type === "machine_state") {
           setMachineState(chunk.data);
+        }
+
+        if (chunk.type === "invariant-violation") {
+          // Clear current assistant content and show violation notice; retry stream follows
+          assistantAdded = false;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...last,
+                  content: `_Invariant "${chunk.name}" violated — regenerating response..._`,
+                  invariantViolation: chunk.name,
+                },
+              ];
+            }
+            return prev;
+          });
+        }
+
+        if (chunk.type === "invariant-warning") {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              const existing = last.invariantWarnings ?? [];
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...last,
+                  invariantWarnings: [...existing, chunk.name],
+                },
+              ];
+            }
+            return prev;
+          });
         }
       }
     }
