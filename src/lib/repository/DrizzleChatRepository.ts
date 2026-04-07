@@ -2,6 +2,7 @@ import { and, asc, desc, eq, lte, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   branchContextStateTable,
+  branchMcpOverrideTable,
   branchTable,
   branchWorkingMemoryTable,
   chatTable,
@@ -219,6 +220,21 @@ export class DrizzleChatRepository implements IChatRepository {
       mainState.summarizedUpTo,
       mainState.factsExtractedUpTo,
     );
+
+    // Copy MCP overrides from parent branch
+    const parentOverrides = await db
+      .select()
+      .from(branchMcpOverrideTable)
+      .where(eq(branchMcpOverrideTable.branchId, mainBranch.id));
+    if (parentOverrides.length > 0) {
+      await db.insert(branchMcpOverrideTable).values(
+        parentOverrides.map((o) => ({
+          branchId: branch.id,
+          mcpServerId: o.mcpServerId,
+          enabled: o.enabled,
+        })),
+      );
+    }
 
     return branch;
   }

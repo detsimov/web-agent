@@ -100,6 +100,9 @@ function ChatContainerInner() {
   const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS);
   const [instructions, setInstructions] = useState(DEFAULT_INSTRUCTIONS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    "general" | "mcp" | "context" | "profile" | "invariants" | undefined
+  >(undefined);
   const [contextStateOpen, setContextStateOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
@@ -515,11 +518,18 @@ function ChatContainerInner() {
           modelName={selectedModelData?.name ?? selectedModel}
           maxTokens={maxTokens}
           modelsLoading={modelsLoading}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => {
+            setSettingsInitialTab(undefined);
+            setSettingsOpen(true);
+          }}
         />
         <SettingsDialog
           open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsInitialTab(undefined);
+          }}
+          initialTab={settingsInitialTab}
           models={models}
           modelsLoading={modelsLoading}
           selectedModel={selectedModel}
@@ -587,6 +597,11 @@ function ChatContainerInner() {
               globalCommunicationStyle={globalStyle}
               onStyleChange={handleStyleChange}
               machineState={machineState}
+              branchId={activeBranchId}
+              onOpenMcpSettings={() => {
+                setSettingsInitialTab("mcp");
+                setSettingsOpen(true);
+              }}
             />
           </>
         ) : (

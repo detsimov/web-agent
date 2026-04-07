@@ -91,6 +91,15 @@ export type TurnResult = {
   workingMemory: WorkingMemory | null;
 };
 
+export type ToolCallChunk = {
+  type: "tool_call";
+  toolName: string;
+  serverName: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
+  isError: boolean;
+};
+
 export type StreamChunk =
   | { type: "delta"; content: string }
   | { type: "done"; content: string; usage: UsageAccumulator | null }
@@ -98,7 +107,8 @@ export type StreamChunk =
   | { type: "working_memory"; data: WorkingMemory }
   | { type: "machine_state"; data: StateMachineInstance }
   | { type: "invariant-violation"; name: string; description: string }
-  | { type: "invariant-warning"; name: string; description: string };
+  | { type: "invariant-warning"; name: string; description: string }
+  | ToolCallChunk;
 
 export interface ContextStrategy {
   run(

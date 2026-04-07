@@ -237,7 +237,15 @@ async function handleStreamingResponse(
           | { type: "working_memory"; data: WorkingMemoryData }
           | { type: "machine_state"; data: MachineStateData }
           | { type: "invariant-violation"; name: string; description: string }
-          | { type: "invariant-warning"; name: string; description: string };
+          | { type: "invariant-warning"; name: string; description: string }
+          | {
+              type: "tool_call";
+              toolName: string;
+              serverName: string;
+              arguments: Record<string, unknown>;
+              result: unknown;
+              isError: boolean;
+            };
 
         if (chunk.type === "delta") {
           if (!assistantAdded) {
@@ -326,6 +334,35 @@ async function handleStreamingResponse(
             }
             return prev;
           });
+        }
+
+        if (chunk.type === "tool_call") {
+          const toolCall = {
+            toolName: chunk.toolName,
+            serverName: chunk.serverName,
+            arguments: chunk.arguments,
+            result: chunk.result,
+            isError: chunk.isError,
+          };
+          if (!assistantAdded) {
+            assistantAdded = true;
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", content: "", toolCalls: [toolCall] },
+            ]);
+          } else {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant") {
+                const existing = last.toolCalls ?? [];
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, toolCalls: [...existing, toolCall] },
+                ];
+              }
+              return prev;
+            });
+          }
         }
       }
     }

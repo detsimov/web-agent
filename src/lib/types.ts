@@ -13,6 +13,14 @@ export type Model = {
   };
 };
 
+export type ToolCallInfo = {
+  toolName: string;
+  serverName: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
+  isError: boolean;
+};
+
 export type ChatMessage = Message & {
   id?: number;
   usage?: {
@@ -23,6 +31,7 @@ export type ChatMessage = Message & {
   } | null;
   invariantViolation?: string;
   invariantWarnings?: string[];
+  toolCalls?: ToolCallInfo[];
 };
 
 export type PersistedMessage = {

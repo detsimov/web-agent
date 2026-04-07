@@ -140,6 +140,21 @@ export class AgentPipeline {
       invariants,
     );
 
+    // 6.5. Resolve MCP tools for this branch
+    let mcpTools: ToolDefinition[] = [];
+    let mcpRouting: import("@/lib/mcp/resolve-tools").McpToolRouting =
+      new Map();
+    try {
+      const { resolveTools: resolveMcpTools } = await import(
+        "@/lib/mcp/resolve-tools"
+      );
+      const resolved = await resolveMcpTools(branchId);
+      mcpTools = resolved.tools;
+      mcpRouting = resolved.routing;
+    } catch {
+      // MCP tool resolution failed — continue without MCP tools
+    }
+
     // 7. Create main agent (with tools if tool mode, with machine tool gating)
     let updatedWorkingMemory: WorkingMemory | null = null;
 
@@ -154,6 +169,8 @@ export class AgentPipeline {
       (instance) => {
         machineInstance = instance;
       },
+      mcpTools,
+      mcpRouting,
     );
 
     // 8. Stream response with invariant validation
@@ -396,9 +413,11 @@ export class AgentPipeline {
     branchId: number,
     machineInstance: StateMachineInstance | null,
     onMachineUpdate: (instance: StateMachineInstance) => void,
+    mcpTools: ToolDefinition[] = [],
+    mcpRouting: import("@/lib/mcp/resolve-tools").McpToolRouting = new Map(),
   ): Agent {
     // Collect base tools
-    const baseTools: ToolDefinition[] = [];
+    const baseTools: ToolDefinition[] = [...mcpTools];
     if (config.workingMemoryMode === "tool") {
       baseTools.push(WORKING_MEMORY_TOOL);
     }
@@ -467,6 +486,54 @@ export class AgentPipeline {
           });
         }
         return { output: result, streamChunks };
+      }
+
+      // Handle MCP tool calls
+      const mcpRoute = mcpRouting.get(call.function.name);
+      if (mcpRoute) {
+        try {
+          const { mcpManager } = await import("@/lib/mcp/manager");
+          const args = JSON.parse(call.function.arguments);
+          const result = await mcpManager.callTool(
+            mcpRoute.serverId,
+            mcpRoute.originalName,
+            args,
+          );
+          // Find server name from the namespaced tool name (prefix before __)
+          const serverName =
+            call.function.name.split("__").slice(0, -1).join("__") || "mcp";
+          return {
+            output: result,
+            streamChunks: [
+              {
+                type: "tool_call" as const,
+                toolName: mcpRoute.originalName,
+                serverName,
+                arguments: args,
+                result,
+                isError: false,
+              },
+            ],
+          };
+        } catch (error) {
+          const errMsg =
+            error instanceof Error ? error.message : "Tool execution failed";
+          const serverName =
+            call.function.name.split("__").slice(0, -1).join("__") || "mcp";
+          return {
+            output: { error: errMsg },
+            streamChunks: [
+              {
+                type: "tool_call" as const,
+                toolName: mcpRoute.originalName,
+                serverName,
+                arguments: {},
+                result: errMsg,
+                isError: true,
+              },
+            ],
+          };
+        }
       }
 
       return { output: { error: `Unknown tool: ${call.function.name}` } };

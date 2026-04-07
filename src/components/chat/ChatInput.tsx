@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { MachineStateData } from "@/hooks/useChat";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
+import { McpPicker } from "./McpPicker";
 import { StylePicker } from "./StylePicker";
 
 export type SendOptions = {
@@ -16,6 +17,8 @@ type Props = {
   globalCommunicationStyle: CommunicationStyleKey;
   onStyleChange: (style: CommunicationStyleKey | null) => void;
   machineState: MachineStateData | null;
+  branchId: number | null;
+  onOpenMcpSettings: () => void;
 };
 
 export function ChatInput({
@@ -25,6 +28,8 @@ export function ChatInput({
   globalCommunicationStyle,
   onStyleChange,
   machineState,
+  branchId,
+  onOpenMcpSettings,
 }: Props) {
   const [value, setValue] = useState("");
   const [planningMode, setPlanningMode] = useState(false);
@@ -85,6 +90,7 @@ export function ChatInput({
               globalDefault={globalCommunicationStyle}
               onChange={onStyleChange}
             />
+            <McpPicker branchId={branchId} onOpenSettings={onOpenMcpSettings} />
             {!machineActive && (
               <button
                 type="button"

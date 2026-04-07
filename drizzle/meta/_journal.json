@@ -64,6 +64,13 @@
       "when": 1775347200000,
       "tag": "0008_invariant_table",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1775433600000,
+      "tag": "0009_mcp_server_tables",
+      "breakpoints": true
     }
   ]
 }

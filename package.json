@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@openrouter/sdk": "^0.9.11",
     "drizzle-orm": "^0.45.1",
     "next": "16.2.1",

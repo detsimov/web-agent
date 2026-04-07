@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { int, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { int, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 
 export const chatTable = sqliteTable("chat_table", {
   id: int().primaryKey({ autoIncrement: true }),
@@ -159,6 +159,53 @@ export const invariantTable = sqliteTable("invariant", {
     .$defaultFn(() => new Date()),
 });
 
+export const mcpServerTable = sqliteTable("mcp_server", {
+  id: int().primaryKey({ autoIncrement: true }),
+  name: text().notNull().unique(),
+  type: text().notNull(), // "stdio" | "http" | "sse"
+  config: text().notNull(), // JSON
+  enabled: int().notNull().default(1),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const branchMcpOverrideTable = sqliteTable(
+  "branch_mcp_override",
+  {
+    id: int().primaryKey({ autoIncrement: true }),
+    branchId: int("branch_id")
+      .notNull()
+      .references(() => branchTable.id, { onDelete: "cascade" }),
+    mcpServerId: int("mcp_server_id")
+      .notNull()
+      .references(() => mcpServerTable.id, { onDelete: "cascade" }),
+    enabled: int().notNull(),
+  },
+  (table) => [unique().on(table.branchId, table.mcpServerId)],
+);
+
+export const mcpServerRelations = relations(mcpServerTable, ({ many }) => ({
+  branchOverrides: many(branchMcpOverrideTable),
+}));
+
+export const branchMcpOverrideRelations = relations(
+  branchMcpOverrideTable,
+  ({ one }) => ({
+    branch: one(branchTable, {
+      fields: [branchMcpOverrideTable.branchId],
+      references: [branchTable.id],
+    }),
+    mcpServer: one(mcpServerTable, {
+      fields: [branchMcpOverrideTable.mcpServerId],
+      references: [mcpServerTable.id],
+    }),
+  }),
+);
+
 export const chatRelations = relations(chatTable, ({ many }) => ({
   branches: many(branchTable),
 }));
@@ -183,6 +230,7 @@ export const branchRelations = relations(branchTable, ({ one, many }) => ({
     references: [branchWorkingMemoryTable.branchId],
   }),
   machineInstances: many(machineInstancesTable),
+  mcpOverrides: many(branchMcpOverrideTable),
 }));
 
 export const branchWorkingMemoryRelations = relations(
