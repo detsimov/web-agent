@@ -188,8 +188,64 @@ export const branchMcpOverrideTable = sqliteTable(
   (table) => [unique().on(table.branchId, table.mcpServerId)],
 );
 
+export const notificationBridgeTable = sqliteTable("notification_bridge", {
+  id: int().primaryKey({ autoIncrement: true }),
+  type: text().notNull(),
+  name: text().notNull().unique(),
+  enabled: int().notNull().default(1),
+  llmModel: text("llm_model").notNull(),
+  llmPrompt: text("llm_prompt").notNull(),
+  config: text().notNull(), // JSON
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const notificationLogTable = sqliteTable("notification_log", {
+  id: int().primaryKey({ autoIncrement: true }),
+  bridgeId: int("bridge_id")
+    .notNull()
+    .references(() => notificationBridgeTable.id, { onDelete: "cascade" }),
+  mcpServerId: int("mcp_server_id")
+    .notNull()
+    .references(() => mcpServerTable.id, { onDelete: "cascade" }),
+  type: text().notNull(),
+  rawPayload: text("raw_payload").notNull(), // JSON
+  llmOutput: text("llm_output").notNull(),
+  status: text().notNull(), // "sent" | "failed"
+  error: text(),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const notificationBridgeRelations = relations(
+  notificationBridgeTable,
+  ({ many }) => ({
+    logs: many(notificationLogTable),
+  }),
+);
+
+export const notificationLogRelations = relations(
+  notificationLogTable,
+  ({ one }) => ({
+    bridge: one(notificationBridgeTable, {
+      fields: [notificationLogTable.bridgeId],
+      references: [notificationBridgeTable.id],
+    }),
+    mcpServer: one(mcpServerTable, {
+      fields: [notificationLogTable.mcpServerId],
+      references: [mcpServerTable.id],
+    }),
+  }),
+);
+
 export const mcpServerRelations = relations(mcpServerTable, ({ many }) => ({
   branchOverrides: many(branchMcpOverrideTable),
+  notificationLogs: many(notificationLogTable),
 }));
 
 export const branchMcpOverrideRelations = relations(

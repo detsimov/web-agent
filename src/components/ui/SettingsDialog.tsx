@@ -6,11 +6,18 @@ import { ContextTab } from "@/components/settings/ContextTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { InvariantsTab } from "@/components/settings/InvariantsTab";
 import { McpServersTab } from "@/components/settings/McpServersTab";
+import { NotificationBridgesTab } from "@/components/settings/NotificationBridgesTab";
 import { UserProfileTab } from "@/components/settings/UserProfileTab";
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { Model } from "@/lib/types";
 
-type TabKey = "general" | "mcp" | "context" | "profile" | "invariants";
+type TabKey =
+  | "general"
+  | "mcp"
+  | "context"
+  | "profile"
+  | "invariants"
+  | "notifications";
 
 type TabDef = {
   key: TabKey;
@@ -134,6 +141,23 @@ const ICON_INVARIANTS = (
   </svg>
 );
 
+const ICON_NOTIFICATIONS = (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
 export function SettingsDialog({
   open,
   onClose,
@@ -190,6 +214,7 @@ export function SettingsDialog({
       hidden: !showUserProfile,
     },
     { key: "invariants", label: "Invariants", icon: ICON_INVARIANTS },
+    { key: "notifications", label: "Notifications", icon: ICON_NOTIFICATIONS },
   ];
 
   const visibleTabs = tabs.filter((t) => !t.hidden);
@@ -300,6 +325,7 @@ export function SettingsDialog({
               />
             )}
             {tab === "invariants" && <InvariantsTab />}
+            {tab === "notifications" && <NotificationBridgesTab />}
           </div>
         </div>
       </div>
