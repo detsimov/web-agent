@@ -25,6 +25,7 @@ import { UnifiedFactsExtractor } from "@/lib/pipeline/facts/UnifiedFactsExtracto
 import { WORKING_MEMORY_TOOL } from "@/lib/pipeline/memory/tool";
 import { validateWorkingMemoryUpdate } from "@/lib/pipeline/memory/validation";
 import { WorkingMemoryExtractor } from "@/lib/pipeline/memory/WorkingMemoryExtractor";
+import { RAG_SEARCH_TOOL, RAG_STORE_TOOL } from "@/lib/rag/tools";
 import type { IChatRepository, Invariant } from "@/lib/repository/types";
 import type { Message } from "@/lib/types";
 import { InvariantValidator } from "./InvariantValidator";
@@ -421,6 +422,7 @@ export class AgentPipeline {
     if (config.workingMemoryMode === "tool") {
       baseTools.push(WORKING_MEMORY_TOOL);
     }
+    baseTools.push(RAG_SEARCH_TOOL, RAG_STORE_TOOL);
 
     // Resolve tools with machine gating
     const definition = machineInstance
@@ -527,6 +529,46 @@ export class AgentPipeline {
                 type: "tool_call" as const,
                 toolName: mcpRoute.originalName,
                 serverName,
+                arguments: {},
+                result: errMsg,
+                isError: true,
+              },
+            ],
+          };
+        }
+      }
+
+      // Handle RAG tool calls
+      if (
+        call.function.name === "rag_search" ||
+        call.function.name === "rag_store"
+      ) {
+        try {
+          const args = JSON.parse(call.function.arguments);
+          const result = await this.handleRagTool(call.function.name, args);
+          return {
+            output: result,
+            streamChunks: [
+              {
+                type: "tool_call" as const,
+                toolName: call.function.name,
+                serverName: "rag",
+                arguments: args,
+                result,
+                isError: false,
+              },
+            ],
+          };
+        } catch (error) {
+          const errMsg =
+            error instanceof Error ? error.message : "RAG tool failed";
+          return {
+            output: { error: errMsg },
+            streamChunks: [
+              {
+                type: "tool_call" as const,
+                toolName: call.function.name,
+                serverName: "rag",
                 arguments: {},
                 result: errMsg,
                 isError: true,
@@ -724,6 +766,79 @@ export class AgentPipeline {
           error instanceof Error ? error.message : "Machine tool call failed",
       };
     }
+  }
+
+  private async handleRagTool(
+    name: string,
+    // biome-ignore lint: dynamic tool args
+    args: any,
+  ): Promise<unknown> {
+    if (name === "rag_search") {
+      const { searchAllCollections } = await import("@/lib/rag/search");
+      const { db: dbInner } = await import("@/db");
+      const { ragCollectionTable } = await import("@/db/schema");
+
+      // Check if any collections exist
+      const collections = await dbInner
+        .select({ slug: ragCollectionTable.slug })
+        .from(ragCollectionTable);
+
+      if (collections.length === 0) {
+        return {
+          results: [],
+          message:
+            "No knowledge base collections have been configured. The user can create collections at /knowledge.",
+        };
+      }
+
+      try {
+        const results = await searchAllCollections(
+          args.query as string,
+          args.collections as string[] | undefined,
+          Math.min((args.limit as number) ?? 5, 20),
+        );
+        return { results };
+      } catch {
+        return {
+          error: "Knowledge base is unavailable. Qdrant may not be running.",
+        };
+      }
+    }
+
+    if (name === "rag_store") {
+      const { ingestTextContent } = await import("@/lib/rag/pipeline");
+      const { db: dbInner } = await import("@/db");
+      const { ragCollectionTable } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [collection] = await dbInner
+        .select()
+        .from(ragCollectionTable)
+        .where(eq(ragCollectionTable.slug, args.collection as string));
+
+      if (!collection) {
+        const all = await dbInner
+          .select({ slug: ragCollectionTable.slug })
+          .from(ragCollectionTable);
+        return {
+          error: `Collection '${args.collection}' not found. Available: ${all.map((c) => c.slug).join(", ") || "none"}`,
+        };
+      }
+
+      const result = await ingestTextContent(
+        collection.id,
+        (args.title as string) ?? "Agent note",
+        args.content as string,
+        "agent",
+      );
+      return {
+        stored: true,
+        documentId: result.documentId,
+        chunkCount: result.chunkCount,
+      };
+    }
+
+    return { error: `Unknown RAG tool: ${name}` };
   }
 }
 

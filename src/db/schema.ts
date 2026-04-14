@@ -330,6 +330,80 @@ export const messageRelations = relations(messageTable, ({ one }) => ({
   }),
 }));
 
+// --- RAG tables ---
+
+export const ragCollectionTable = sqliteTable("rag_collection", {
+  id: int().primaryKey({ autoIncrement: true }),
+  name: text().notNull().unique(),
+  slug: text().notNull().unique(),
+  description: text().notNull().default(""),
+  embeddingModel: text("embedding_model").notNull(),
+  embeddingDimensions: int("embedding_dimensions").notNull(),
+  chunkingStrategy: text("chunking_strategy").notNull(), // "fixed" | "sentence" | "recursive" | "markdown"
+  chunkingConfig: text("chunking_config").notNull().default("{}"), // JSON
+  needsRebuild: int("needs_rebuild").notNull().default(0),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const ragDocumentTable = sqliteTable("rag_document", {
+  id: int().primaryKey({ autoIncrement: true }),
+  collectionId: int("collection_id")
+    .notNull()
+    .references(() => ragCollectionTable.id, { onDelete: "cascade" }),
+  title: text().notNull(),
+  sourceType: text("source_type").notNull(), // "file" | "text" | "agent"
+  filename: text(),
+  contentHash: text("content_hash").notNull(),
+  chunkCount: int("chunk_count").notNull().default(0),
+  status: text().notNull().default("ready"), // "processing" | "ready" | "error"
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const ragChunkTable = sqliteTable("rag_chunk", {
+  id: int().primaryKey({ autoIncrement: true }),
+  documentId: int("document_id")
+    .notNull()
+    .references(() => ragDocumentTable.id, { onDelete: "cascade" }),
+  chunkIndex: int("chunk_index").notNull(),
+  content: text().notNull(),
+  qdrantPointId: text("qdrant_point_id").notNull(),
+  createdAt: int("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const ragCollectionRelations = relations(
+  ragCollectionTable,
+  ({ many }) => ({
+    documents: many(ragDocumentTable),
+  }),
+);
+
+export const ragDocumentRelations = relations(
+  ragDocumentTable,
+  ({ one, many }) => ({
+    collection: one(ragCollectionTable, {
+      fields: [ragDocumentTable.collectionId],
+      references: [ragCollectionTable.id],
+    }),
+    chunks: many(ragChunkTable),
+  }),
+);
+
+export const ragChunkRelations = relations(ragChunkTable, ({ one }) => ({
+  document: one(ragDocumentTable, {
+    fields: [ragChunkTable.documentId],
+    references: [ragDocumentTable.id],
+  }),
+}));
+
 export const messageUsageRelations = relations(
   messageUsageTable,
   ({ one }) => ({

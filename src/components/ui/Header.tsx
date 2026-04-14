@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 type Props = {
   modelName: string;
   maxTokens: number;
@@ -15,19 +17,27 @@ export function Header({
 }: Props) {
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
-      <span className="text-sm text-zinc-600 dark:text-zinc-400">
-        {modelsLoading ? (
-          "Loading..."
-        ) : (
-          <>
-            <span className="font-medium text-zinc-900 dark:text-zinc-100">
-              {modelName}
-            </span>
-            {" \u00B7 "}
-            {maxTokens.toLocaleString()} tokens
-          </>
-        )}
-      </span>
+      <div className="flex items-center gap-4">
+        <span className="text-sm text-zinc-600 dark:text-zinc-400">
+          {modelsLoading ? (
+            "Loading..."
+          ) : (
+            <>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                {modelName}
+              </span>
+              {" \u00B7 "}
+              {maxTokens.toLocaleString()} tokens
+            </>
+          )}
+        </span>
+        <Link
+          href="/knowledge"
+          className="text-sm text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        >
+          Knowledge
+        </Link>
+      </div>
       <button
         type="button"
         onClick={onOpenSettings}
