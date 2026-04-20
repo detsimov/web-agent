@@ -48,7 +48,7 @@ export async function chat(
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   const response = await openRouter.beta.responses.send({
-    openResponsesRequest: {
+    responsesRequest: {
       input,
       instructions: systemMessage?.content,
       model: options.model,
@@ -96,7 +96,7 @@ export function chatStream(messages: Message[], options: ChatOptions) {
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   return openRouter.beta.responses.send({
-    openResponsesRequest: {
+    responsesRequest: {
       input,
       instructions: systemMessage?.content,
       model: options.model,
@@ -110,6 +110,11 @@ export function chatStream(messages: Message[], options: ChatOptions) {
   });
 }
 
+type ResponsesRequestInput = Extract<
+  Parameters<typeof openRouter.beta.responses.send>[0],
+  { responsesRequest: { stream: true } }
+>["responsesRequest"]["input"];
+
 /**
  * Stream with raw input items — supports function_call and function_call_output
  * entries needed for the agentic tool-calling loop.
@@ -119,12 +124,10 @@ export function chatStreamWithInput(
   options: ChatOptions & { instructions?: string },
 ) {
   return openRouter.beta.responses.send({
-    openResponsesRequest: {
+    responsesRequest: {
       // Cast: input contains mixed message and function_call/function_call_output items
       // that the SDK union type can't express from Record<string, unknown>
-      input: input as Parameters<
-        typeof openRouter.beta.responses.send
-      >[0]["openResponsesRequest"]["input"],
+      input: input as ResponsesRequestInput,
       instructions: options.instructions,
       model: options.model,
       maxOutputTokens: options.maxTokens,

@@ -1,12 +1,100 @@
 "use client";
 
-import { useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { Fragment, type ReactNode, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "@/components/ui/CopyButton";
 import type { ChatMessage, ToolCallInfo } from "@/lib/types";
+import { CitationLink } from "./CitationLink";
 import { UsageBadge } from "./UsageBadge";
+
+const CITATION_RE = /\[([a-z0-9-]+):([a-z0-9-]+):(\d+)\]/gi;
+
+function splitStringCitations(text: string, keyPrefix: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
+  CITATION_RE.lastIndex = 0;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+  while ((match = CITATION_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const [full, collection, doc, chunk] = match;
+    parts.push(
+      <CitationLink
+        key={`${keyPrefix}-${i}-${collection}-${doc}-${chunk}`}
+        collectionSlug={collection.toLowerCase()}
+        docSlug={doc.toLowerCase()}
+        chunkIndex={Number(chunk)}
+        display={full}
+      />,
+    );
+    lastIndex = match.index + match[0].length;
+    i++;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : [text];
+}
+
+function linkifyCitations(children: ReactNode, keyPrefix = "c"): ReactNode {
+  if (typeof children === "string") {
+    const parts = splitStringCitations(children, keyPrefix);
+    if (parts.length === 1 && typeof parts[0] === "string") return parts[0];
+    return parts.map((p, i) => (
+      // biome-ignore lint/suspicious/noArrayIndexKey: text parts are stable per render
+      <Fragment key={`${keyPrefix}-p-${i}`}>{p}</Fragment>
+    ));
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, i) => {
+      if (typeof child === "string") {
+        const parts = splitStringCitations(child, `${keyPrefix}-${i}`);
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: text parts are stable per render
+          <Fragment key={`${keyPrefix}-f-${i}`}>
+            {parts.map((p, j) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: text parts are stable per render
+              <Fragment key={`${keyPrefix}-f-${i}-${j}`}>{p}</Fragment>
+            ))}
+          </Fragment>
+        );
+      }
+      return child;
+    });
+  }
+  return children;
+}
+
+const TEXT_TAGS = [
+  "p",
+  "li",
+  "td",
+  "th",
+  "em",
+  "strong",
+  "blockquote",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+] as const;
+
+const MARKDOWN_COMPONENTS: Components = Object.fromEntries(
+  TEXT_TAGS.map((tag) => [
+    tag,
+    ({ children, ...rest }: { children?: ReactNode }) => {
+      const Tag = tag;
+      return <Tag {...rest}>{linkifyCitations(children, tag)}</Tag>;
+    },
+  ]),
+);
 
 type Props = {
   message: ChatMessage;
@@ -58,6 +146,7 @@ export function MessageBubble({ message, onOpenMenu }: Props) {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}
+                components={MARKDOWN_COMPONENTS}
               >
                 {message.content}
               </ReactMarkdown>

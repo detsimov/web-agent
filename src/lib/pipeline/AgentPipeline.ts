@@ -26,9 +26,13 @@ import { WORKING_MEMORY_TOOL } from "@/lib/pipeline/memory/tool";
 import { validateWorkingMemoryUpdate } from "@/lib/pipeline/memory/validation";
 import { WorkingMemoryExtractor } from "@/lib/pipeline/memory/WorkingMemoryExtractor";
 import { RAG_SEARCH_TOOL, RAG_STORE_TOOL } from "@/lib/rag/tools";
+import type { PinnedTerm, SearchEnvelope } from "@/lib/rag/types";
 import type { IChatRepository, Invariant } from "@/lib/repository/types";
 import type { Message } from "@/lib/types";
-import { InvariantValidator } from "./InvariantValidator";
+import {
+  InvariantValidator,
+  type RagCitationContext,
+} from "./InvariantValidator";
 import { StickyFactsStrategy } from "./strategies/StickyFactsStrategy";
 import { SummarizationStrategy } from "./strategies/SummarizationStrategy";
 import type {
@@ -39,6 +43,71 @@ import type {
   UsageAccumulator,
   WorkingMemory,
 } from "./types";
+
+// --- Recent retrieval cache (branch-scoped) ---
+
+type RecentRetrieval = {
+  query: string;
+  citationIds: string[];
+  snippets: string[];
+  timestamp: number;
+};
+
+const RECENT_RETRIEVAL_CAP = 5;
+const RECENT_RETRIEVAL_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const RECENT_RETRIEVAL_SNIPPET_LEN = 240;
+
+const recentRetrievalByBranch = new Map<number, RecentRetrieval[]>();
+
+function readRecentRetrievals(branchId: number): RecentRetrieval[] {
+  const entries = recentRetrievalByBranch.get(branchId);
+  if (!entries || entries.length === 0) return [];
+  const now = Date.now();
+  const fresh = entries.filter(
+    (e) => now - e.timestamp <= RECENT_RETRIEVAL_TTL_MS,
+  );
+  if (fresh.length !== entries.length) {
+    if (fresh.length === 0) {
+      recentRetrievalByBranch.delete(branchId);
+    } else {
+      recentRetrievalByBranch.set(branchId, fresh);
+    }
+  }
+  return fresh;
+}
+
+function appendRecentRetrieval(branchId: number, entry: RecentRetrieval): void {
+  const existing = readRecentRetrievals(branchId);
+  const next = [...existing, entry];
+  if (next.length > RECENT_RETRIEVAL_CAP) {
+    next.splice(0, next.length - RECENT_RETRIEVAL_CAP);
+  }
+  recentRetrievalByBranch.set(branchId, next);
+}
+
+function truncateSnippet(content: string): string {
+  const collapsed = content.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= RECENT_RETRIEVAL_SNIPPET_LEN) return collapsed;
+  return `${collapsed.slice(0, RECENT_RETRIEVAL_SNIPPET_LEN)}…`;
+}
+
+// --- Built-in rag-citation invariant (prepended to user-defined invariants) ---
+
+export const RAG_CITATION_INVARIANT: Invariant = {
+  id: "builtin-rag-citation",
+  name: "rag-citation",
+  description:
+    "When rag_search returns results in a turn, the response MUST cite each factual claim with the returned citationId in [collection-slug:doc-slug:chunk] form, and MUST NOT invent citation ids.",
+  type: "rag-citation",
+  pattern: "",
+  caseSensitive: false,
+  severity: "warn",
+  promptHint:
+    "Cite every factual claim from rag_search using its citationId in square brackets. Never invent citation ids.",
+  enabled: true,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+};
 
 export class AgentPipeline {
   constructor(
@@ -60,7 +129,19 @@ export class AgentPipeline {
     const workingMemory = await this.repo.loadWorkingMemory(branchId);
     const globalFacts = await this.repo.loadGlobalFacts();
     const personalization = await this.repo.loadPersonalization();
-    const invariants = await this.repo.loadInvariants({ enabled: true });
+    const userInvariants = await this.repo.loadInvariants({ enabled: true });
+    const invariants: Invariant[] = [RAG_CITATION_INVARIANT, ...userInvariants];
+
+    // Turn-scoped citation registry fed into the rag-citation invariant.
+    const ragContext: RagCitationContext = {
+      validCitations: new Set<string>(),
+      hadNonEmptyRagSearch: false,
+    };
+    const pinnedCollectionVersions = await fetchPinnedCollectionVersions(
+      workingMemory.pinned,
+    );
+    const recentRetrievals = readRecentRetrievals(branchId);
+    const availableCollections = await fetchAvailableCollections();
 
     const config = buildBranchConfig(
       branch,
@@ -139,6 +220,9 @@ export class AgentPipeline {
       content,
       machineSection,
       invariants,
+      recentRetrievals,
+      pinnedCollectionVersions,
+      availableCollections,
     );
 
     // 6.5. Resolve MCP tools for this branch
@@ -172,6 +256,7 @@ export class AgentPipeline {
       },
       mcpTools,
       mcpRouting,
+      ragContext,
     );
 
     // 8. Stream response with invariant validation
@@ -179,8 +264,7 @@ export class AgentPipeline {
     let agentUsage: UsageAccumulator | null = null;
     const MAX_INVARIANT_ATTEMPTS = 3;
 
-    const validator =
-      invariants.length > 0 ? new InvariantValidator(invariants) : null;
+    const validator = new InvariantValidator(invariants);
 
     for (let attempt = 1; attempt <= MAX_INVARIANT_ATTEMPTS; attempt++) {
       assistantContent = "";
@@ -197,25 +281,23 @@ export class AgentPipeline {
           yield chunk;
 
           // Check invariants against accumulated text
-          if (validator) {
-            const violation = validator.check(assistantContent);
-            if (violation) {
-              if (violation.severity === "block") {
-                blockViolation = violation;
-                yield {
-                  type: "invariant-violation",
-                  name: violation.name,
-                  description: violation.description,
-                };
-                break;
-              }
-              // warn: emit warning, continue streaming (suppressed for same invariant by validator)
+          const violation = validator.check(assistantContent, ragContext);
+          if (violation) {
+            if (violation.severity === "block") {
+              blockViolation = violation;
               yield {
-                type: "invariant-warning",
+                type: "invariant-violation",
                 name: violation.name,
                 description: violation.description,
               };
+              break;
             }
+            // warn: emit warning, continue streaming (suppressed for same invariant by validator)
+            yield {
+              type: "invariant-warning",
+              name: violation.name,
+              description: violation.description,
+            };
           }
         } else if (chunk.type === "done") {
           assistantContent = chunk.content;
@@ -242,7 +324,7 @@ export class AgentPipeline {
             content: `[INVARIANT VIOLATION] You violated invariant '${blockViolation.name}'. ${blockViolation.promptHint}. Rewrite your entire response.`,
           },
         ];
-        validator?.reset();
+        validator.reset();
       } else {
         // All attempts exhausted — yield last response with warning
         yield {
@@ -416,6 +498,7 @@ export class AgentPipeline {
     onMachineUpdate: (instance: StateMachineInstance) => void,
     mcpTools: ToolDefinition[] = [],
     mcpRouting: import("@/lib/mcp/resolve-tools").McpToolRouting = new Map(),
+    ragContext?: RagCitationContext,
   ): Agent {
     // Collect base tools
     const baseTools: ToolDefinition[] = [...mcpTools];
@@ -546,6 +629,26 @@ export class AgentPipeline {
         try {
           const args = JSON.parse(call.function.arguments);
           const result = await this.handleRagTool(call.function.name, args);
+
+          if (
+            call.function.name === "rag_search" &&
+            isSearchEnvelope(result) &&
+            result.results.length > 0
+          ) {
+            if (ragContext) {
+              ragContext.hadNonEmptyRagSearch = true;
+              for (const r of result.results) {
+                ragContext.validCitations.add(r.citationId.toLowerCase());
+              }
+            }
+            appendRecentRetrieval(branchId, {
+              query: typeof args.query === "string" ? args.query : "",
+              citationIds: result.results.map((r) => r.citationId),
+              snippets: result.results.map((r) => truncateSnippet(r.content)),
+              timestamp: Date.now(),
+            });
+          }
+
           return {
             output: result,
             streamChunks: [
@@ -775,32 +878,20 @@ export class AgentPipeline {
   ): Promise<unknown> {
     if (name === "rag_search") {
       const { searchAllCollections } = await import("@/lib/rag/search");
-      const { db: dbInner } = await import("@/db");
-      const { ragCollectionTable } = await import("@/db/schema");
-
-      // Check if any collections exist
-      const collections = await dbInner
-        .select({ slug: ragCollectionTable.slug })
-        .from(ragCollectionTable);
-
-      if (collections.length === 0) {
-        return {
-          results: [],
-          message:
-            "No knowledge base collections have been configured. The user can create collections at /knowledge.",
-        };
-      }
 
       try {
-        const results = await searchAllCollections(
+        const envelope = await searchAllCollections(
           args.query as string,
           args.collections as string[] | undefined,
           Math.min((args.limit as number) ?? 5, 20),
         );
-        return { results };
-      } catch {
+        return envelope;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown search error";
+        console.error("rag_search failed:", error);
         return {
-          error: "Knowledge base is unavailable. Qdrant may not be running.",
+          error: `rag_search failed: ${message}`,
         };
       }
     }
@@ -914,6 +1005,9 @@ function buildFinalMessages(
   newUserMessage: string,
   machineSection?: string,
   invariants?: Invariant[],
+  recentRetrievals: RecentRetrieval[] = [],
+  pinnedCollectionVersions: Map<string, number> = new Map(),
+  availableCollections: Array<{ slug: string; name: string }> = [],
 ): Message[] {
   let system = systemMessage;
 
@@ -942,11 +1036,41 @@ function buildFinalMessages(
     }
   }
 
+  // Available knowledge-base collections — helps the agent call rag_search with valid slugs
+  if (availableCollections.length > 0) {
+    const list = availableCollections
+      .map((c) => `  - ${c.slug}${c.name !== c.slug ? ` (${c.name})` : ""}`)
+      .join("\n");
+    system += `\n\n[KNOWLEDGE BASE COLLECTIONS]\nThe user's knowledge base has the following collections available via rag_search. Use the slug (left column) when passing the \`collections\` argument; omit the argument to search all.\n${list}`;
+  }
+
+  // Recent retrievals — short-lived, branch-scoped
+  if (recentRetrievals.length > 0) {
+    const block = recentRetrievals
+      .map((r, i) => {
+        const pairs = r.citationIds
+          .map((cid, j) => `  - [${cid}] ${r.snippets[j] ?? ""}`)
+          .join("\n");
+        return `Query ${i + 1}: "${r.query}"\n${pairs}`;
+      })
+      .join("\n\n");
+    system += `\n\n[RECENTLY RETRIEVED]\nThese rag_search results were returned earlier in this branch. Prefer citing them instead of re-issuing the same query.\n${block}`;
+  }
+
   if (workingMemoryMode === "tool") {
     const memoryJson = hasWorkingMemory ? JSON.stringify(workingMemory) : "{}";
     system += `\n\n[WORKING MEMORY]\n${memoryJson}\n\nIMPORTANT: You MUST call update_working_memory at the end of every response. Update step statuses to reflect completed work. If you don't call it, your progress will be lost.`;
   } else if (hasWorkingMemory) {
     system += `\n\n[WORKING MEMORY]\n${JSON.stringify(workingMemory)}`;
+  }
+
+  // Pinned knowledge — persistent, LLM-curated
+  const pinnedBlock = renderPinnedSection(
+    workingMemory.pinned,
+    pinnedCollectionVersions,
+  );
+  if (pinnedBlock) {
+    system += `\n\n${pinnedBlock}`;
   }
 
   // Machine section — injected after working memory
@@ -970,6 +1094,89 @@ function buildFinalMessages(
     })),
     { role: "user" as const, content: newUserMessage },
   ];
+}
+
+function renderPinnedSection(
+  pinned: PinnedTerm[] | undefined,
+  collectionVersions: Map<string, number>,
+): string | null {
+  if (!pinned || pinned.length === 0) return null;
+
+  const lines = pinned.map((p) => {
+    const citations = p.sources
+      .map((s) => `[${s.collectionSlug}:${s.docSlug}:${s.chunkIndex}]`)
+      .join(" ");
+    const isStale = p.sources.some((s) => {
+      const current = collectionVersions.get(s.collectionSlug);
+      return current !== undefined && current > s.knowledgeVersion;
+    });
+    const prefix = isStale ? "[STALE] " : "";
+    const staleHint = isStale
+      ? " (source was mutated since this was pinned — re-verify with rag_search before relying on it)"
+      : "";
+    return `- ${prefix}${p.term}: ${p.definition} ${citations}${staleHint}`.trim();
+  });
+
+  return `[PINNED KNOWLEDGE]\n${lines.join("\n")}`;
+}
+
+function isSearchEnvelope(value: unknown): value is SearchEnvelope {
+  if (!value || typeof value !== "object") return false;
+  const env = value as { results?: unknown };
+  return Array.isArray(env.results);
+}
+
+async function fetchAvailableCollections(): Promise<
+  Array<{ slug: string; name: string }>
+> {
+  try {
+    const { db } = await import("@/db");
+    const { ragCollectionTable } = await import("@/db/schema");
+    const rows = await db
+      .select({
+        slug: ragCollectionTable.slug,
+        name: ragCollectionTable.name,
+      })
+      .from(ragCollectionTable);
+    return rows;
+  } catch (error) {
+    console.warn("Failed to list collections for prompt:", error);
+    return [];
+  }
+}
+
+async function fetchPinnedCollectionVersions(
+  pinned: PinnedTerm[] | undefined,
+): Promise<Map<string, number>> {
+  const versions = new Map<string, number>();
+  if (!pinned || pinned.length === 0) return versions;
+
+  const slugs = new Set<string>();
+  for (const p of pinned) {
+    for (const s of p.sources) {
+      slugs.add(s.collectionSlug);
+    }
+  }
+  if (slugs.size === 0) return versions;
+
+  try {
+    const { db } = await import("@/db");
+    const { ragCollectionTable } = await import("@/db/schema");
+    const { inArray } = await import("drizzle-orm");
+    const rows = await db
+      .select({
+        slug: ragCollectionTable.slug,
+        knowledgeVersion: ragCollectionTable.knowledgeVersion,
+      })
+      .from(ragCollectionTable)
+      .where(inArray(ragCollectionTable.slug, Array.from(slugs)));
+    for (const r of rows) {
+      versions.set(r.slug, r.knowledgeVersion);
+    }
+  } catch (error) {
+    console.warn("Failed to fetch pinned collection versions:", error);
+  }
+  return versions;
 }
 
 function assertCursorsMonotonic(

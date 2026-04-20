@@ -164,6 +164,14 @@ export function DocumentList({ collectionId, onRefresh }: Props) {
     await onRefresh();
   }
 
+  async function handleCopyCitationPrefix(slug: string) {
+    try {
+      await navigator.clipboard.writeText(`[${slug}:`);
+    } catch {
+      // Clipboard API may be unavailable
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -293,8 +301,13 @@ export function DocumentList({ collectionId, onRefresh }: Props) {
                 key={doc.id}
                 className="border-b border-zinc-100 dark:border-zinc-800"
               >
-                <td className="py-1.5 text-zinc-900 dark:text-zinc-100 truncate max-w-[200px]">
-                  {doc.title}
+                <td className="py-1.5 text-zinc-900 dark:text-zinc-100 max-w-[260px]">
+                  <div className="truncate">{doc.title}</div>
+                  {doc.slug && (
+                    <div className="truncate font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+                      {doc.slug}
+                    </div>
+                  )}
                 </td>
                 <td className="py-1.5 text-zinc-500 dark:text-zinc-400">
                   {doc.sourceType}
@@ -306,6 +319,16 @@ export function DocumentList({ collectionId, onRefresh }: Props) {
                   {new Date(doc.createdAt).toLocaleDateString()}
                 </td>
                 <td className="py-1.5 text-right">
+                  {doc.slug && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCitationPrefix(doc.slug)}
+                      className="mr-2 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      title={`Copy [${doc.slug}: to clipboard`}
+                    >
+                      Copy citation prefix
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDelete(doc.id)}

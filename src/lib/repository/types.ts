@@ -50,11 +50,13 @@ export type Personalization = {
   communicationStyle: CommunicationStyleKey;
 };
 
+export type InvariantType = "regex" | "keyword" | "rag-citation";
+
 export type Invariant = {
   id: string;
   name: string;
   description: string;
-  type: "regex" | "keyword" | null;
+  type: InvariantType | null;
   pattern: string;
   caseSensitive: boolean;
   severity: "block" | "warn";

@@ -16,8 +16,8 @@ export async function POST(
     const { id } = await params;
     const collectionId = Number(id);
 
-    const results = await searchCollection(collectionId, query, limit);
-    return Response.json({ results });
+    const envelope = await searchCollection(collectionId, query, limit);
+    return Response.json(envelope);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json(

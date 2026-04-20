@@ -29,12 +29,43 @@ export type ChunkResult = {
   index: number;
 };
 
+export type ClarificationMode = "soft" | "strict";
+
 export type SearchResult = {
+  citationId: string;
   content: string;
-  score: number;
+  vectorScore: number;
+  rerankScore: number | null;
   documentTitle: string;
+  documentSlug: string;
   collectionName: string;
+  collectionSlug: string;
   chunkIndex: number;
+  stale?: boolean;
+};
+
+export type SearchEnvelope = {
+  results: SearchResult[];
+  citationGuide?: string;
+  needsClarification?: boolean;
+  clarificationMode?: ClarificationMode;
+  reason?: string;
+  suggestion?: string;
+  rerankFailed?: boolean;
+};
+
+export type PinnedSource = {
+  collectionSlug: string;
+  docSlug: string;
+  chunkIndex: number;
+  knowledgeVersion: number;
+};
+
+export type PinnedTerm = {
+  term: string;
+  definition: string;
+  sources: PinnedSource[];
+  pinnedAt: string;
 };
 
 export type RagCollection = {
@@ -47,6 +78,13 @@ export type RagCollection = {
   chunkingStrategy: ChunkingStrategy;
   chunkingConfig: ChunkingConfig;
   needsRebuild: boolean;
+  vectorThreshold: number;
+  rerankEnabled: boolean;
+  rerankModel: string;
+  rerankTopNInput: number;
+  rerankThreshold: number;
+  clarificationMode: ClarificationMode;
+  knowledgeVersion: number;
   documentCount?: number;
   chunkCount?: number;
 };
@@ -55,6 +93,7 @@ export type RagDocument = {
   id: number;
   collectionId: number;
   title: string;
+  slug: string;
   sourceType: "file" | "text" | "agent";
   filename: string | null;
   contentHash: string;

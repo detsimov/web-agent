@@ -5,6 +5,7 @@ import {
   ragCollectionTable,
   ragDocumentTable,
 } from "@/db/schema";
+import { bumpKnowledgeVersion } from "@/lib/rag/pipeline";
 import { qdrant } from "@/lib/rag/qdrant";
 
 export async function DELETE(
@@ -44,6 +45,8 @@ export async function DELETE(
 
   // Cascade delete handles chunks
   await db.delete(ragDocumentTable).where(eq(ragDocumentTable.id, documentId));
+
+  await bumpKnowledgeVersion(collectionId);
 
   return Response.json({ ok: true });
 }

@@ -5,7 +5,7 @@ export const RAG_SEARCH_TOOL: ToolDefinition = {
   function: {
     name: "rag_search",
     description:
-      "Search the user's knowledge base for relevant information. Returns ranked chunks from stored documents.",
+      "Search the user's knowledge base. Returns an envelope { results, citationGuide?, needsClarification?, clarificationMode?, reason?, suggestion?, rerankFailed? }. Each result carries a stable citationId in the form [collection-slug:doc-slug:chunk]; every factual claim derived from a result MUST be followed by that citationId in square brackets. When needsClarification is true, obey the clarificationMode: in strict mode refuse to answer from general knowledge and ask the user to clarify; in soft mode explicitly disclaim that the answer is not sourced from the knowledge base before answering from general knowledge.",
     parameters: {
       type: "object",
       properties: {

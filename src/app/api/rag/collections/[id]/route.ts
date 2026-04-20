@@ -13,6 +13,12 @@ const UpdateCollectionSchema = z.object({
     .enum(["fixed", "sentence", "recursive", "markdown"])
     .optional(),
   chunkingConfig: z.record(z.string(), z.unknown()).optional(),
+  vectorThreshold: z.number().min(0).max(1).optional(),
+  rerankEnabled: z.boolean().optional(),
+  rerankModel: z.string().min(1).optional(),
+  rerankTopNInput: z.number().int().min(5).max(50).optional(),
+  rerankThreshold: z.number().min(0).max(1).optional(),
+  clarificationMode: z.enum(["soft", "strict"]).optional(),
 });
 
 export async function GET(
@@ -33,6 +39,13 @@ export async function GET(
       chunkingStrategy: ragCollectionTable.chunkingStrategy,
       chunkingConfig: ragCollectionTable.chunkingConfig,
       needsRebuild: ragCollectionTable.needsRebuild,
+      vectorThreshold: ragCollectionTable.vectorThreshold,
+      rerankEnabled: ragCollectionTable.rerankEnabled,
+      rerankModel: ragCollectionTable.rerankModel,
+      rerankTopNInput: ragCollectionTable.rerankTopNInput,
+      rerankThreshold: ragCollectionTable.rerankThreshold,
+      clarificationMode: ragCollectionTable.clarificationMode,
+      knowledgeVersion: ragCollectionTable.knowledgeVersion,
       createdAt: ragCollectionTable.createdAt,
       documentCount: sql<number>`(SELECT COUNT(*) FROM rag_document WHERE collection_id = rag_collection.id)`,
       chunkCount: sql<number>`(SELECT COUNT(*) FROM rag_chunk WHERE document_id IN (SELECT id FROM rag_document WHERE collection_id = rag_collection.id))`,
@@ -48,6 +61,7 @@ export async function GET(
     ...collection,
     chunkingConfig: JSON.parse(collection.chunkingConfig),
     needsRebuild: !!collection.needsRebuild,
+    rerankEnabled: !!collection.rerankEnabled,
   });
 }
 
@@ -89,7 +103,21 @@ export async function PUT(
       updates.chunkingStrategy = data.chunkingStrategy;
     if (data.chunkingConfig !== undefined)
       updates.chunkingConfig = JSON.stringify(data.chunkingConfig);
-    if (modelChanged) updates.needsRebuild = 1;
+    if (data.vectorThreshold !== undefined)
+      updates.vectorThreshold = data.vectorThreshold;
+    if (data.rerankEnabled !== undefined)
+      updates.rerankEnabled = data.rerankEnabled ? 1 : 0;
+    if (data.rerankModel !== undefined) updates.rerankModel = data.rerankModel;
+    if (data.rerankTopNInput !== undefined)
+      updates.rerankTopNInput = data.rerankTopNInput;
+    if (data.rerankThreshold !== undefined)
+      updates.rerankThreshold = data.rerankThreshold;
+    if (data.clarificationMode !== undefined)
+      updates.clarificationMode = data.clarificationMode;
+    if (modelChanged) {
+      updates.needsRebuild = 1;
+      updates.knowledgeVersion = sql`${ragCollectionTable.knowledgeVersion} + 1`;
+    }
 
     const [updated] = await db
       .update(ragCollectionTable)
@@ -101,6 +129,7 @@ export async function PUT(
       ...updated,
       chunkingConfig: JSON.parse(updated.chunkingConfig),
       needsRebuild: !!updated.needsRebuild,
+      rerankEnabled: !!updated.rerankEnabled,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

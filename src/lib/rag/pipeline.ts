@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   ragChunkTable,
@@ -10,7 +10,20 @@ import { chunk } from "./chunking";
 import { generateEmbeddings } from "./embeddings";
 import { parseFile } from "./parsing";
 import { qdrant } from "./qdrant";
+import { resolveSlugCollision, toSlug } from "./slug";
 import type { ChunkingConfig, ChunkingStrategy } from "./types";
+
+async function bumpKnowledgeVersion(collectionId: number) {
+  await db
+    .update(ragCollectionTable)
+    .set({
+      knowledgeVersion: sql`${ragCollectionTable.knowledgeVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(ragCollectionTable.id, collectionId));
+}
+
+export { bumpKnowledgeVersion };
 
 type IngestResult = {
   documentId: number;
@@ -119,12 +132,16 @@ async function ingestText(
 
   onProgress?.({ stage: "storing" });
 
+  const baseSlug = toSlug(title) || `doc-${Date.now()}`;
+  const slug = await resolveSlugCollision(collection.id, baseSlug);
+
   // Create document
   const [doc] = await db
     .insert(ragDocumentTable)
     .values({
       collectionId: collection.id,
       title,
+      slug,
       sourceType,
       filename,
       contentHash,
@@ -160,6 +177,8 @@ async function ingestText(
       })),
     });
   }
+
+  await bumpKnowledgeVersion(collection.id);
 
   onProgress?.({
     stage: "done",
@@ -210,7 +229,11 @@ export async function rebuildCollection(collectionId: number): Promise<number> {
     // Clear rebuild flag
     await db
       .update(ragCollectionTable)
-      .set({ needsRebuild: 0, updatedAt: new Date() })
+      .set({
+        needsRebuild: 0,
+        knowledgeVersion: sql`${ragCollectionTable.knowledgeVersion} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(ragCollectionTable.id, collectionId));
     return 0;
   }
@@ -239,7 +262,11 @@ export async function rebuildCollection(collectionId: number): Promise<number> {
   // Clear rebuild flag
   await db
     .update(ragCollectionTable)
-    .set({ needsRebuild: 0, updatedAt: new Date() })
+    .set({
+      needsRebuild: 0,
+      knowledgeVersion: sql`${ragCollectionTable.knowledgeVersion} + 1`,
+      updatedAt: new Date(),
+    })
     .where(eq(ragCollectionTable.id, collectionId));
 
   return chunks.length;

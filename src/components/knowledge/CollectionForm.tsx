@@ -57,6 +57,29 @@ export function CollectionForm({ collection, onClose, onCreated }: Props) {
   const [overlap, setOverlap] = useState(200);
   const [sentences, setSentences] = useState(5);
 
+  const [clarificationMode, setClarificationMode] = useState<"soft" | "strict">(
+    collection?.clarificationMode ?? "soft",
+  );
+  const [rerankEnabled, setRerankEnabled] = useState(
+    collection?.rerankEnabled ?? true,
+  );
+  const [rerankModel, setRerankModel] = useState(
+    collection?.rerankModel ?? "cohere/rerank-4-pro",
+  );
+  const [rerankTopNInput, setRerankTopNInput] = useState(
+    collection?.rerankTopNInput ?? 15,
+  );
+  const [vectorThreshold, setVectorThreshold] = useState(
+    collection?.vectorThreshold ?? 0.3,
+  );
+  const [rerankThreshold, setRerankThreshold] = useState(
+    collection?.rerankThreshold ?? 0.3,
+  );
+  const [rerankModels, setRerankModels] = useState<string[]>([
+    "cohere/rerank-4-pro",
+  ]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const [models, setModels] = useState<EmbeddingModel[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -75,6 +98,23 @@ export function CollectionForm({ collection, onClose, onCreated }: Props) {
             if (dims) setEmbeddingDimensions(dims);
             return first.id;
           });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/rag/rerank-models")
+      .then((r) => r.json())
+      .then((data) => {
+        const list: Array<{ id: string }> = data?.data ?? data ?? [];
+        const ids = list
+          .map((m) => m.id)
+          .filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          );
+        if (ids.length > 0) {
+          setRerankModels(ids);
         }
       })
       .catch(() => {});
@@ -125,6 +165,12 @@ export function CollectionForm({ collection, onClose, onCreated }: Props) {
       embeddingDimensions,
       chunkingStrategy,
       chunkingConfig: buildChunkingConfig(),
+      clarificationMode,
+      vectorThreshold,
+      rerankEnabled,
+      rerankModel,
+      rerankTopNInput,
+      rerankThreshold,
     };
 
     try {
@@ -275,6 +321,134 @@ export function CollectionForm({ collection, onClose, onCreated }: Props) {
             />
           </label>
         )}
+
+        <label className="mb-3 block">
+          <span className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Clarification Mode
+          </span>
+          <select
+            value={clarificationMode}
+            onChange={(e) =>
+              setClarificationMode(e.target.value as "soft" | "strict")
+            }
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          >
+            <option value="soft">
+              Soft — fall back to general knowledge with a disclaimer
+            </option>
+            <option value="strict">
+              Strict — refuse to answer and request clarification
+            </option>
+          </select>
+          <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+            Controls how the agent behaves when the knowledge base returns no
+            results above the configured thresholds.
+          </span>
+        </label>
+
+        <div className="mb-3 rounded-md border border-zinc-200 dark:border-zinc-700">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <span>Advanced</span>
+            <span className="text-xs text-zinc-500">
+              {advancedOpen ? "▾" : "▸"}
+            </span>
+          </button>
+          {advancedOpen && (
+            <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={rerankEnabled}
+                  onChange={(e) => setRerankEnabled(e.target.checked)}
+                />
+                <span>Enable reranking</span>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Rerank Model
+                </span>
+                <select
+                  value={rerankModel}
+                  onChange={(e) => setRerankModel(e.target.value)}
+                  disabled={!rerankEnabled}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {rerankModels.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Rerank Top-N Input
+                </span>
+                <input
+                  type="number"
+                  value={rerankTopNInput}
+                  min={5}
+                  max={50}
+                  onChange={(e) =>
+                    setRerankTopNInput(
+                      Math.max(5, Math.min(50, Number(e.target.value))),
+                    )
+                  }
+                  disabled={!rerankEnabled}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <span>Vector Threshold</span>
+                  <span className="text-xs text-zinc-500">
+                    {vectorThreshold.toFixed(2)}
+                  </span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={vectorThreshold}
+                  onChange={(e) => setVectorThreshold(Number(e.target.value))}
+                  className="w-full"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <span>Rerank Threshold</span>
+                  <span className="text-xs text-zinc-500">
+                    {rerankThreshold.toFixed(2)}
+                  </span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={rerankThreshold}
+                  onChange={(e) => setRerankThreshold(Number(e.target.value))}
+                  disabled={!rerankEnabled}
+                  className="w-full disabled:opacity-50"
+                />
+              </label>
+
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Score distributions differ per embedding and rerank model. Use
+                the search preview to calibrate thresholds empirically.
+              </p>
+            </div>
+          )}
+        </div>
 
         <div className="mt-4 flex justify-end gap-2">
           <button

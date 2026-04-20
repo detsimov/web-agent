@@ -12,6 +12,12 @@ const CreateCollectionSchema = z.object({
   embeddingDimensions: z.number().int().positive(),
   chunkingStrategy: z.enum(["fixed", "sentence", "recursive", "markdown"]),
   chunkingConfig: z.record(z.string(), z.unknown()).optional().default({}),
+  vectorThreshold: z.number().min(0).max(1).optional(),
+  rerankEnabled: z.boolean().optional(),
+  rerankModel: z.string().min(1).optional(),
+  rerankTopNInput: z.number().int().min(5).max(50).optional(),
+  rerankThreshold: z.number().min(0).max(1).optional(),
+  clarificationMode: z.enum(["soft", "strict"]).optional(),
 });
 
 function toSlug(name: string): string {
@@ -34,6 +40,13 @@ export async function GET() {
         chunkingStrategy: ragCollectionTable.chunkingStrategy,
         chunkingConfig: ragCollectionTable.chunkingConfig,
         needsRebuild: ragCollectionTable.needsRebuild,
+        vectorThreshold: ragCollectionTable.vectorThreshold,
+        rerankEnabled: ragCollectionTable.rerankEnabled,
+        rerankModel: ragCollectionTable.rerankModel,
+        rerankTopNInput: ragCollectionTable.rerankTopNInput,
+        rerankThreshold: ragCollectionTable.rerankThreshold,
+        clarificationMode: ragCollectionTable.clarificationMode,
+        knowledgeVersion: ragCollectionTable.knowledgeVersion,
         createdAt: ragCollectionTable.createdAt,
         documentCount: sql<number>`(SELECT COUNT(*) FROM rag_document WHERE collection_id = rag_collection.id)`,
         chunkCount: sql<number>`(SELECT COUNT(*) FROM rag_chunk WHERE document_id IN (SELECT id FROM rag_document WHERE collection_id = rag_collection.id))`,
@@ -45,6 +58,7 @@ export async function GET() {
         ...c,
         chunkingConfig: JSON.parse(c.chunkingConfig),
         needsRebuild: !!c.needsRebuild,
+        rerankEnabled: !!c.rerankEnabled,
       })),
     );
   } catch (_error) {
@@ -96,6 +110,24 @@ export async function POST(request: Request) {
         embeddingDimensions: data.embeddingDimensions,
         chunkingStrategy: data.chunkingStrategy,
         chunkingConfig: JSON.stringify(data.chunkingConfig),
+        ...(data.vectorThreshold !== undefined && {
+          vectorThreshold: data.vectorThreshold,
+        }),
+        ...(data.rerankEnabled !== undefined && {
+          rerankEnabled: data.rerankEnabled ? 1 : 0,
+        }),
+        ...(data.rerankModel !== undefined && {
+          rerankModel: data.rerankModel,
+        }),
+        ...(data.rerankTopNInput !== undefined && {
+          rerankTopNInput: data.rerankTopNInput,
+        }),
+        ...(data.rerankThreshold !== undefined && {
+          rerankThreshold: data.rerankThreshold,
+        }),
+        ...(data.clarificationMode !== undefined && {
+          clarificationMode: data.clarificationMode,
+        }),
       })
       .returning();
 
@@ -103,6 +135,7 @@ export async function POST(request: Request) {
       ...collection,
       chunkingConfig: data.chunkingConfig,
       needsRebuild: false,
+      rerankEnabled: !!collection.rerankEnabled,
       documentCount: 0,
       chunkCount: 0,
     });

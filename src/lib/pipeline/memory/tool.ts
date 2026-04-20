@@ -37,6 +37,41 @@ export const WORKING_MEMORY_TOOL: ToolDefinition = {
           description:
             "Append-only log — add a short line for each action you completed this turn",
         },
+        pinned: {
+          type: "array",
+          description:
+            "Optional. Pinned knowledge — terms retrieved via rag_search that are likely to recur in future turns. Cap 20, FIFO eviction by pinnedAt. Each entry MUST carry sources[] with citation components so staleness can be tracked.",
+          items: {
+            type: "object",
+            properties: {
+              term: { type: "string" },
+              definition: { type: "string" },
+              sources: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    collectionSlug: { type: "string" },
+                    docSlug: { type: "string" },
+                    chunkIndex: { type: "number" },
+                    knowledgeVersion: { type: "number" },
+                  },
+                  required: [
+                    "collectionSlug",
+                    "docSlug",
+                    "chunkIndex",
+                    "knowledgeVersion",
+                  ],
+                },
+              },
+              pinnedAt: {
+                type: "string",
+                description: "ISO timestamp when the term was pinned",
+              },
+            },
+            required: ["term", "definition", "sources", "pinnedAt"],
+          },
+        },
       },
       required: ["summary", "detail"],
     },

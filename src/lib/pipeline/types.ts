@@ -1,5 +1,6 @@
 import type { CommunicationStyleKey } from "@/lib/communication-styles";
 import type { StateMachineInstance } from "@/lib/machine/types";
+import type { PinnedTerm } from "@/lib/rag/types";
 import type { PersistedMessage } from "@/lib/types";
 
 // --- Working Memory ---
@@ -14,6 +15,7 @@ export type WorkingMemory = {
   detail: string;
   steps: WorkingMemoryStep[];
   history: string[];
+  pinned?: PinnedTerm[];
 };
 
 export const EMPTY_WORKING_MEMORY: WorkingMemory = {

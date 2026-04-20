@@ -342,6 +342,13 @@ export const ragCollectionTable = sqliteTable("rag_collection", {
   chunkingStrategy: text("chunking_strategy").notNull(), // "fixed" | "sentence" | "recursive" | "markdown"
   chunkingConfig: text("chunking_config").notNull().default("{}"), // JSON
   needsRebuild: int("needs_rebuild").notNull().default(0),
+  vectorThreshold: real("vector_threshold").notNull().default(0.3),
+  rerankEnabled: int("rerank_enabled").notNull().default(1),
+  rerankModel: text("rerank_model").notNull().default("cohere/rerank-4-pro"),
+  rerankTopNInput: int("rerank_top_n_input").notNull().default(15),
+  rerankThreshold: real("rerank_threshold").notNull().default(0.3),
+  clarificationMode: text("clarification_mode").notNull().default("soft"), // "soft" | "strict"
+  knowledgeVersion: int("knowledge_version").notNull().default(0),
   createdAt: int("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -350,21 +357,28 @@ export const ragCollectionTable = sqliteTable("rag_collection", {
     .$defaultFn(() => new Date()),
 });
 
-export const ragDocumentTable = sqliteTable("rag_document", {
-  id: int().primaryKey({ autoIncrement: true }),
-  collectionId: int("collection_id")
-    .notNull()
-    .references(() => ragCollectionTable.id, { onDelete: "cascade" }),
-  title: text().notNull(),
-  sourceType: text("source_type").notNull(), // "file" | "text" | "agent"
-  filename: text(),
-  contentHash: text("content_hash").notNull(),
-  chunkCount: int("chunk_count").notNull().default(0),
-  status: text().notNull().default("ready"), // "processing" | "ready" | "error"
-  createdAt: int("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const ragDocumentTable = sqliteTable(
+  "rag_document",
+  {
+    id: int().primaryKey({ autoIncrement: true }),
+    collectionId: int("collection_id")
+      .notNull()
+      .references(() => ragCollectionTable.id, { onDelete: "cascade" }),
+    title: text().notNull(),
+    slug: text().notNull().default(""),
+    sourceType: text("source_type").notNull(), // "file" | "text" | "agent"
+    filename: text(),
+    contentHash: text("content_hash").notNull(),
+    chunkCount: int("chunk_count").notNull().default(0),
+    status: text().notNull().default("ready"), // "processing" | "ready" | "error"
+    createdAt: int("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    unique("rag_document_collection_slug").on(table.collectionId, table.slug),
+  ],
+);
 
 export const ragChunkTable = sqliteTable("rag_chunk", {
   id: int().primaryKey({ autoIncrement: true }),
