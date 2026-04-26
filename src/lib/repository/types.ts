@@ -48,6 +48,7 @@ export type ContextState = {
 
 export type Personalization = {
   communicationStyle: CommunicationStyleKey;
+  ollamaBaseUrl: string | null;
 };
 
 export type InvariantType = "regex" | "keyword" | "rag-citation";

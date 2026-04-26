@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BranchTab } from "@/components/chat/BranchTabs";
 import { BranchTabs } from "@/components/chat/BranchTabs";
 import type {
@@ -95,7 +95,11 @@ export function ChatContainer() {
 
 function ChatContainerInner() {
   const { showToast } = useToast();
-  const { models, isLoading: modelsLoading } = useModels();
+  const {
+    models,
+    isLoading: modelsLoading,
+    refetch: refetchModels,
+  } = useModels();
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
   const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS);
   const [instructions, setInstructions] = useState(DEFAULT_INSTRUCTIONS);
@@ -175,11 +179,13 @@ function ChatContainerInner() {
     messages,
     isLoading,
     error,
+    clearError,
     workingMemory,
     setWorkingMemory,
     machineState,
     setMachineState,
     sendMessage,
+    retryLastSend,
     abort: _abort,
     reset,
     loadMessages,
@@ -192,6 +198,37 @@ function ChatContainerInner() {
     chatId: activeChatId,
     branchId: activeBranchId,
   });
+
+  const retryLastSendRef = useRef(retryLastSend);
+  useEffect(() => {
+    retryLastSendRef.current = retryLastSend;
+  }, [retryLastSend]);
+
+  useEffect(() => {
+    if (error?.kind !== "local-unreachable") return;
+    showToast({
+      message: `Local model unreachable: ${error.original}`,
+      duration: 8000,
+      actions: [
+        {
+          label: "Retry",
+          onClick: () => {
+            clearError();
+            retryLastSendRef.current?.();
+          },
+        },
+        {
+          label: "Switch to cloud",
+          onClick: () => {
+            clearError();
+            setSelectedModel(DEFAULT_MODEL);
+            // Run after the model state has propagated to useChat's closure
+            queueMicrotask(() => retryLastSendRef.current?.());
+          },
+        },
+      ],
+    });
+  }, [error, showToast, clearError]);
 
   const loadBranchMessages = useCallback(
     (branch: ApiBranch, allBranches: ApiBranch[]) => {
@@ -548,6 +585,7 @@ function ChatContainerInner() {
           showUserProfile={!!activeChatId}
           communicationStyle={globalStyle}
           onCommunicationStyleChange={handleGlobalStyleChange}
+          onLocalModelsChanged={refetchModels}
         />
         <ContextStateDialog
           open={contextStateOpen}
@@ -577,7 +615,9 @@ function ChatContainerInner() {
             />
             {error && (
               <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
-                {error}
+                {error.kind === "local-unreachable"
+                  ? `Local model unreachable: ${error.original}`
+                  : error.message}
               </div>
             )}
             <WorkingMemoryWidget

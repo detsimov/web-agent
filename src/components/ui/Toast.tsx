@@ -19,6 +19,7 @@ type Toast = {
   id: number;
   message: string;
   action?: ToastAction;
+  actions?: ToastAction[];
   duration: number;
   createdAt: number;
 };
@@ -27,6 +28,7 @@ type ToastContextValue = {
   showToast: (opts: {
     message: string;
     action?: ToastAction;
+    actions?: ToastAction[];
     duration?: number;
   }) => number;
   dismissToast: (id: number) => void;
@@ -50,7 +52,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (opts: { message: string; action?: ToastAction; duration?: number }) => {
+    (opts: {
+      message: string;
+      action?: ToastAction;
+      actions?: ToastAction[];
+      duration?: number;
+    }) => {
       const id = nextId++;
       const duration = opts.duration ?? 5000;
       setToasts((prev) => [
@@ -59,6 +66,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           id,
           message: opts.message,
           action: opts.action,
+          actions: opts.actions,
           duration,
           createdAt: Date.now(),
         },
@@ -119,11 +127,13 @@ function ToastItem({
     return () => clearTimeout(timerRef.current);
   }, [toast.id, toast.duration, onDismiss]);
 
-  const handleAction = () => {
+  const handleAction = (action: ToastAction) => {
     clearTimeout(timerRef.current);
-    toast.action?.onClick();
+    action.onClick();
     onDismiss(toast.id);
   };
+
+  const actions = toast.actions ?? (toast.action ? [toast.action] : []);
 
   return (
     <div
@@ -132,15 +142,16 @@ function ToastItem({
       }`}
     >
       <span>{toast.message}</span>
-      {toast.action && (
+      {actions.map((action, idx) => (
         <button
+          key={`${action.label}-${idx}`}
           type="button"
-          onClick={handleAction}
+          onClick={() => handleAction(action)}
           className="font-medium text-blue-400 hover:text-blue-300 dark:text-blue-600 dark:hover:text-blue-700"
         >
-          {toast.action.label}
+          {action.label}
         </button>
-      )}
+      ))}
       <div
         className="absolute bottom-0 left-0 h-0.5 rounded-full bg-white/30 dark:bg-zinc-900/30"
         style={{

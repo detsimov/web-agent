@@ -33,10 +33,16 @@ type UseChatOptions = {
   branchId?: number | null;
 };
 
+export type ChatError =
+  | { kind: "generic"; message: string }
+  | { kind: "local-unreachable"; original: string };
+
+type SendOptions = { planningMode?: boolean };
+
 export function useChat(options: UseChatOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const [workingMemory, setWorkingMemory] = useState<WorkingMemoryData | null>(
     null,
   );
@@ -44,6 +50,9 @@ export function useChat(options: UseChatOptions = {}) {
     null,
   );
   const abortRef = useRef<AbortController | null>(null);
+  const lastSendRef = useRef<{ content: string; options?: SendOptions } | null>(
+    null,
+  );
 
   const abort = useCallback(() => {
     if (abortRef.current) {
@@ -53,9 +62,11 @@ export function useChat(options: UseChatOptions = {}) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string, sendOptions?: { planningMode?: boolean }) => {
+    async (content: string, sendOptions?: SendOptions) => {
       // Cancel any in-flight request
       abort();
+
+      lastSendRef.current = { content, options: sendOptions };
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -127,7 +138,13 @@ export function useChat(options: UseChatOptions = {}) {
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Something went wrong");
+        const message =
+          err instanceof Error ? err.message : "Something went wrong";
+        if (options.model?.startsWith("ollama/")) {
+          setError({ kind: "local-unreachable", original: message });
+        } else {
+          setError({ kind: "generic", message });
+        }
       } finally {
         // Only clear loading if this controller is still the active one
         if (abortRef.current === controller) {
@@ -154,7 +171,23 @@ export function useChat(options: UseChatOptions = {}) {
     setIsLoading(false);
     setWorkingMemory(null);
     setMachineState(null);
+    lastSendRef.current = null;
   }, [abort]);
+
+  const retryLastSend = useCallback(() => {
+    const last = lastSendRef.current;
+    if (!last) return;
+    setMessages((prev) => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg?.role === "user" && lastMsg.content === last.content) {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+    return sendMessage(last.content, last.options);
+  }, [sendMessage]);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const loadMessages = useCallback(
     (msgs: ChatMessage[]) => {
@@ -182,11 +215,13 @@ export function useChat(options: UseChatOptions = {}) {
     messages,
     isLoading,
     error,
+    clearError,
     workingMemory,
     setWorkingMemory,
     machineState,
     setMachineState,
     sendMessage,
+    retryLastSend,
     abort,
     reset,
     loadMessages,

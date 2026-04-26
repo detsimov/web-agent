@@ -471,7 +471,10 @@ export class DrizzleChatRepository implements IChatRepository {
           inputTokens: turn.usage.inputTokens,
           outputTokens: turn.usage.outputTokens,
           totalTokens: turn.usage.totalTokens,
-          cost: turn.usage.cost > 0 ? turn.usage.cost : null,
+          cost:
+            turn.usage.cost != null && turn.usage.cost > 0
+              ? turn.usage.cost
+              : null,
         });
       }
 
@@ -769,12 +772,16 @@ export class DrizzleChatRepository implements IChatRepository {
     return {
       communicationStyle: (rows[0]?.communicationStyle ??
         "normal") as CommunicationStyleKey,
+      ollamaBaseUrl: rows[0]?.ollamaBaseUrl ?? null,
     };
   }
 
   async updatePersonalization(
     data: Partial<Personalization>,
   ): Promise<Personalization> {
+    // Ensure the row exists before updating (loadPersonalization handles upsert)
+    await this.loadPersonalization();
+
     await db
       .update(personalizationTable)
       .set({ ...data, updatedAt: new Date() })

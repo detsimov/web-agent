@@ -54,7 +54,7 @@ export function addUsage(
     inputTokens: acc.inputTokens + usage.inputTokens,
     outputTokens: acc.outputTokens + usage.outputTokens,
     totalTokens: acc.totalTokens + usage.totalTokens,
-    cost: acc.cost + (usage.cost ?? 0),
+    cost: (acc.cost ?? 0) + (usage.cost ?? 0),
   };
 }
 

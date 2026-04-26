@@ -55,6 +55,8 @@ type Props = {
   // Communication style
   communicationStyle: CommunicationStyleKey;
   onCommunicationStyleChange: (style: CommunicationStyleKey) => void;
+  // Local Models (Ollama)
+  onLocalModelsChanged?: () => void;
 };
 
 const ICON_GENERAL = (
@@ -180,6 +182,7 @@ export function SettingsDialog({
   showUserProfile,
   communicationStyle,
   onCommunicationStyleChange,
+  onLocalModelsChanged,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<TabKey>(initialTab ?? "general");
@@ -296,6 +299,7 @@ export function SettingsDialog({
                 onInstructionsChange={onInstructionsChange}
                 communicationStyle={communicationStyle}
                 onCommunicationStyleChange={onCommunicationStyleChange}
+                onLocalModelsChanged={onLocalModelsChanged}
               />
             )}
             {tab === "mcp" && <McpServersTab />}

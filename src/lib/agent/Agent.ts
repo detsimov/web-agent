@@ -1,4 +1,9 @@
-import { chat, chatStream, chatStreamWithInput } from "@/lib/chat";
+import {
+  chat,
+  chatStream,
+  chatStreamWithInput,
+  isOllamaModel,
+} from "@/lib/chat";
 import type {
   StreamChunk,
   ToolCall,
@@ -82,6 +87,7 @@ export class Agent {
             event.response,
             fullContent,
           );
+          if (usage && isOllamaModel(this.config.model)) usage.cost = null;
           yield { type: "done", content, usage };
         }
       }
@@ -176,7 +182,7 @@ export class Agent {
                     outputTokens:
                       totalUsage.outputTokens + iterUsage.outputTokens,
                     totalTokens: totalUsage.totalTokens + iterUsage.totalTokens,
-                    cost: totalUsage.cost + iterUsage.cost,
+                    cost: (totalUsage.cost ?? 0) + (iterUsage.cost ?? 0),
                   }
                 : iterUsage;
             }
@@ -186,6 +192,9 @@ export class Agent {
                 event.response,
                 totalContent,
               );
+              if (totalUsage && isOllamaModel(this.config.model)) {
+                totalUsage.cost = null;
+              }
               yield { type: "done", content, usage: totalUsage };
             }
           }

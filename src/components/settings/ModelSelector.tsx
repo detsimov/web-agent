@@ -10,7 +10,10 @@ type Props = {
   isLoading: boolean;
 };
 
-function groupByProvider(models: Model[]) {
+const LOCAL_GROUP_KEY = "ollama";
+const LOCAL_GROUP_LABEL = "Local";
+
+function groupByProvider(models: Model[]): Array<[string, Model[]]> {
   const groups: Record<string, Model[]> = {};
   for (const model of models) {
     const provider = model.id.split("/")[0] ?? "other";
@@ -19,7 +22,17 @@ function groupByProvider(models: Model[]) {
     }
     groups[provider].push(model);
   }
-  return groups;
+
+  const entries = Object.entries(groups);
+  return entries.sort(([a], [b]) => {
+    if (a === LOCAL_GROUP_KEY) return -1;
+    if (b === LOCAL_GROUP_KEY) return 1;
+    return 0;
+  });
+}
+
+function groupLabel(key: string): string {
+  return key === LOCAL_GROUP_KEY ? LOCAL_GROUP_LABEL : key;
 }
 
 function formatPrice(price: string) {
@@ -47,7 +60,7 @@ export function ModelSelector({ models, value, onChange, isLoading }: Props) {
   const grouped = useMemo(() => groupByProvider(filtered), [filtered]);
   const flatFiltered = useMemo(() => {
     const result: Model[] = [];
-    for (const group of Object.values(grouped)) {
+    for (const [, group] of grouped) {
       result.push(...group);
     }
     return result;
@@ -125,10 +138,10 @@ export function ModelSelector({ models, value, onChange, isLoading }: Props) {
           ref={listRef}
           className="absolute left-0 top-full z-50 mt-1 max-h-80 w-[360px] overflow-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
         >
-          {Object.entries(grouped).map(([provider, providerModels]) => (
+          {grouped.map(([provider, providerModels]) => (
             <li key={provider}>
               <div className="sticky top-0 bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
-                {provider}
+                {groupLabel(provider)}
               </div>
               {providerModels.map((model) => {
                 const idx = flatFiltered.indexOf(model);

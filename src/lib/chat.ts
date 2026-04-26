@@ -1,5 +1,11 @@
+import type { OpenRouter } from "@openrouter/sdk";
 import type { ToolDefinition } from "@/lib/agent/types";
 import { AppError } from "@/lib/error/AppError";
+import {
+  getOllamaBaseUrl,
+  getOllamaBaseUrlOrDefault,
+  getOllamaClient,
+} from "@/lib/ollama";
 import { openRouter } from "@/lib/openrouter";
 import type { Message } from "@/lib/types";
 
@@ -20,6 +26,34 @@ export type ChatUsage = {
   totalTokens: number;
   cost: number | null;
 };
+
+export const OLLAMA_PREFIX = "ollama/";
+
+export function isOllamaModel(model: string): boolean {
+  return model.startsWith(OLLAMA_PREFIX);
+}
+
+type ResolvedTransport = {
+  client: OpenRouter;
+  modelForApi: string;
+  isLocal: boolean;
+};
+
+async function resolveTransport(model: string): Promise<ResolvedTransport> {
+  if (isOllamaModel(model)) {
+    const baseUrl = getOllamaBaseUrlOrDefault(await getOllamaBaseUrl());
+    return {
+      client: getOllamaClient(baseUrl),
+      modelForApi: model.slice(OLLAMA_PREFIX.length),
+      isLocal: true,
+    };
+  }
+  return {
+    client: openRouter,
+    modelForApi: model,
+    isLocal: false,
+  };
+}
 
 function toApiTools(tools?: ToolDefinition[]):
   | Array<{
@@ -47,16 +81,18 @@ export async function chat(
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  const response = await openRouter.beta.responses.send({
+  const { client, modelForApi, isLocal } = await resolveTransport(
+    options.model,
+  );
+
+  const response = await client.beta.responses.send({
     responsesRequest: {
       input,
       instructions: systemMessage?.content,
-      model: options.model,
+      model: modelForApi,
       maxOutputTokens: options.maxTokens,
       tools: toApiTools(options.tools),
-      provider: {
-        sort: "price",
-      },
+      ...(isLocal ? {} : { provider: { sort: "price" as const } }),
       stream: false,
     },
   });
@@ -83,28 +119,30 @@ export async function chat(
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           totalTokens: usage.totalTokens,
-          cost: usage.cost ?? null,
+          cost: isLocal ? null : (usage.cost ?? null),
         }
       : null,
   };
 }
 
-export function chatStream(messages: Message[], options: ChatOptions) {
+export async function chatStream(messages: Message[], options: ChatOptions) {
   const systemMessage = messages.find((m) => m.role === "system");
   const input = messages
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  return openRouter.beta.responses.send({
+  const { client, modelForApi, isLocal } = await resolveTransport(
+    options.model,
+  );
+
+  return client.beta.responses.send({
     responsesRequest: {
       input,
       instructions: systemMessage?.content,
-      model: options.model,
+      model: modelForApi,
       maxOutputTokens: options.maxTokens,
       tools: toApiTools(options.tools),
-      provider: {
-        sort: "price",
-      },
+      ...(isLocal ? {} : { provider: { sort: "price" as const } }),
       stream: true,
     },
   });
@@ -119,22 +157,24 @@ type ResponsesRequestInput = Extract<
  * Stream with raw input items — supports function_call and function_call_output
  * entries needed for the agentic tool-calling loop.
  */
-export function chatStreamWithInput(
+export async function chatStreamWithInput(
   input: Array<Record<string, unknown>>,
   options: ChatOptions & { instructions?: string },
 ) {
-  return openRouter.beta.responses.send({
+  const { client, modelForApi, isLocal } = await resolveTransport(
+    options.model,
+  );
+
+  return client.beta.responses.send({
     responsesRequest: {
       // Cast: input contains mixed message and function_call/function_call_output items
       // that the SDK union type can't express from Record<string, unknown>
       input: input as ResponsesRequestInput,
       instructions: options.instructions,
-      model: options.model,
+      model: modelForApi,
       maxOutputTokens: options.maxTokens,
       tools: toApiTools(options.tools),
-      provider: {
-        sort: "price",
-      },
+      ...(isLocal ? {} : { provider: { sort: "price" as const } }),
       stream: true,
     },
   });

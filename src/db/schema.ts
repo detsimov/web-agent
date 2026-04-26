@@ -18,6 +18,7 @@ export const chatTable = sqliteTable("chat_table", {
 export const personalizationTable = sqliteTable("personalization", {
   id: int().primaryKey(),
   communicationStyle: text("communication_style").notNull().default("normal"),
+  ollamaBaseUrl: text("ollama_base_url"),
   updatedAt: int("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

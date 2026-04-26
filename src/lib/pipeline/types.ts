@@ -77,7 +77,7 @@ export type UsageAccumulator = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  cost: number;
+  cost: number | null;
 };
 
 export type TurnResult = {

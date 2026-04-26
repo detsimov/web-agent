@@ -1198,10 +1198,16 @@ function mergeUsage(
   if (!agent && pipeline.totalTokens === 0) return null;
   if (!agent) return pipeline;
   if (pipeline.totalTokens === 0) return agent;
+  const pipelineCost = pipeline.cost ?? 0;
+  const agentCost = agent.cost ?? 0;
+  const cost =
+    pipeline.cost === null && agent.cost === null
+      ? null
+      : pipelineCost + agentCost;
   return {
     inputTokens: pipeline.inputTokens + agent.inputTokens,
     outputTokens: pipeline.outputTokens + agent.outputTokens,
     totalTokens: pipeline.totalTokens + agent.totalTokens,
-    cost: pipeline.cost + agent.cost,
+    cost,
   };
 }
